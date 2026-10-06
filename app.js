@@ -1,16 +1,21 @@
 const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
-    ["nova-saída", "Nova Saída", "nova_Saida.html"],
+    ["nova-saida", "Nova Saída", "nova_Saida.html"],
     ["fechamento", "Fechamento", "fechamento.html"],
     ["historico", "Historico", "historico.html"],
     ["fechamento-semanal", "Fechamento Semanal", "fechamento_Semanal.html"],
     ["fechamento-quinzenal", "Fechamento Quinzenal", "fechamento_Quinzenal.html"],
     ["pagamentos", "Pagamentos", "pagamentos.html"],
-    ["configurações", "Configurações", "configuracoes.html"]
+    ["configuracoes", "Configurações", "configuracoes.html"]
 ];
 
-const today = new Date().toISOString().slice(0, 10);
+const today = (() => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${now.getFullYear()}-${month}-${day}`;
+})();
 
 function makeId() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -296,7 +301,7 @@ function renderDashboard() {
         const statusClass = route.status === "Fechado" ? "status-fechado" : "status-aberto";
         return `
             <tr>
-                <td>${driver?.nome || "Entregador removido"}</td>
+                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${route.entregues || 0}</td>
@@ -395,7 +400,7 @@ function renderOpenRoutes() {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${driver?.nome || "Entregador removido"}</td>
+                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${escapeHtml(driver?.veiculo || "-")}</td>
                 <td>${route.saida}</td>
@@ -423,7 +428,7 @@ function renderClosedRoutes() {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${driver?.nome || "Entregador removido"}</td>
+                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
@@ -458,7 +463,7 @@ function renderHistory(filter = "") {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${driver?.nome || "Entregador removido"}</td>
+                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
@@ -506,7 +511,7 @@ function renderWeek() {
         const driver = getDriver(item.driverId);
         return `
             <tr>
-                <td>${driver?.nome || "Entregador removido"}</td>
+                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(item.empresa)}</td>
                 <td>${item.saidas}</td>
                 <td>${item.entregues}</td>
@@ -952,6 +957,7 @@ function setupForms() {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(settingsForm));
             state.settings = {
+                ...state.settings,
                 empresa: data.empresa,
                 operador: data.operador,
                 valorPacote: Number(data.valorMoto),

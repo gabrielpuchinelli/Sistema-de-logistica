@@ -198,7 +198,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
     width: 100%;
     min-height: 44px;
     padding: 11px 12px;
@@ -207,6 +208,11 @@ select {
     border: 1px solid var(--borda);
     border-radius: 8px;
     outline: 0;
+}
+
+textarea {
+    min-height: 96px;
+    resize: vertical;
 }
 
 input:focus,
