@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <title>RMSLogis | Login</title>
+</head>
+<body class="login-page" data-page="login">
+    <main class="login-shell">
+        <section class="login-brand">
+            <img class="brand-logo" src="rms-logo.svg" alt="Logo RMS">
+            <div class="login-brand-copy">
+                <span>CONTROLE OPERACIONAL</span>
+                <h1>RMSLogis</h1>
+            </div>
+        </section>
+
+        <form class="login" id="loginForm" method="post">
+            <div class="login-form-heading">
+                <span>Acesso da equipe</span>
+                <h2>Entrar no sistema</h2>
+                <p>Informe seus dados para continuar.</p>
+            </div>
+            <label>
+                E-mail
+                <input type="email" name="email" placeholder="voce@empresa.com" autocomplete="username" required>
+            </label>
+            <label>
+                Senha
+                <input type="password" name="password" placeholder="Digite sua senha" autocomplete="current-password" required>
+            </label>
+            <button type="submit">Entrar</button>
+        </form>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-client.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title">
+    <title id="title">RMS</title>
+    <rect width="1200" height="675" fill="#00472a"/>
+    <path d="M302 256h24v187h564l-7 22H302z" fill="#f15a00"/>
+    <path d="M323 225h37v180h538l-8 38H323z" fill="#f6c400"/>
+    <text x="345" y="407" fill="#f5f7f3" font-family="Arial Black,Arial,sans-serif" font-size="238" font-weight="900">RMS</text>
+    <text x="858" y="220" fill="#f5f7f3" font-family="Arial,sans-serif" font-size="40" font-weight="700">®</text>
+</svg>

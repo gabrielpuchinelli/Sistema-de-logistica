@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <title>RMSLogis | Fechamento Quinzenal</title>
+</head>
+<body data-page="fechamento-quinzenal">
+    <aside class="sidebar">
+        <a class="logo" href="dashboard.html">RMSLogis</a>
+        <nav class="menu" aria-label="Menu principal"></nav>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <h1>Fechamento quinzenal</h1>
+                <p>Recebimentos das empresas, pagamentos e resultado do período</p>
+            </div>
+            <div class="usuario" data-user>Operador</div>
+        </header>
+
+        <section class="filters fortnight-controls">
+            <label>Mês de referência<input type="month" data-fortnight-month></label>
+            <label>Período
+                <select data-fortnight-half>
+                    <option value="1">1ª quinzena · dias 1 a 15</option>
+                    <option value="2">2ª quinzena · dia 16 ao fim do mês</option>
+                </select>
+            </label>
+            <strong data-fortnight-period></strong>
+        </section>
+
+        <section class="cards">
+            <article class="card">
+                <h3>Recebido das empresas</h3>
+                <div class="numero" data-fortnight="received">R$ 0,00</div>
+                <div class="descricao">Recebimentos registrados no período</div>
+            </article>
+            <article class="card">
+                <h3>Pago aos motoristas</h3>
+                <div class="numero" data-fortnight="paid">R$ 0,00</div>
+                <div class="descricao">Pagamentos confirmados</div>
+            </article>
+            <article class="card">
+                <h3>Resultado do período</h3>
+                <div class="numero" data-fortnight="result" aria-live="polite">R$ 0,00</div>
+                <div class="descricao">Recebido menos pagamentos feitos</div>
+            </article>
+            <article class="card">
+                <h3>Pendente aos motoristas</h3>
+                <div class="numero" data-fortnight="pending">R$ 0,00</div>
+                <div class="descricao">Rotas fechadas ainda não pagas</div>
+            </article>
+        </section>
+
+        <section class="form-panel">
+            <div class="section-title">
+                <h2>Registrar recebimento</h2>
+                <span data-fortnight-receipt-count>0 recebimentos</span>
+            </div>
+            <form class="form-grid" data-form="receipt">
+                <label>Data do recebimento<input name="data" type="date" required></label>
+                <label>Empresa<select name="empresa" data-company-select required></select></label>
+                <label>Valor recebido<input name="valor" type="number" min="0.01" step="0.01" placeholder="0,00" required></label>
+                <label>Observacao<input name="observacao" type="text" placeholder="Opcional"></label>
+                <button class="btn btn-primary" type="submit">Salvar recebimento</button>
+            </form>
+            <p class="form-help">Cadastre empresas em <a href="configuracoes.html">Configuracoes</a>. Confirme pagamentos na aba <a href="pagamentos.html">Pagamentos</a>.</p>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Recebido por empresa</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Recebimentos</th>
+                        <th>Total recebido</th>
+                    </tr>
+                </thead>
+                <tbody data-fortnight-company-table></tbody>
+            </table>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Pago por motorista</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Motorista</th>
+                        <th>Rotas pagas</th>
+                        <th>Total pago</th>
+                    </tr>
+                </thead>
+                <tbody data-fortnight-driver-table></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-client.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
