@@ -7,7 +7,7 @@ const menuItems = [
     ["fechamento-semanal", "Fechamento Semanal", "fechamento_Semanal.html"],
     ["fechamento-quinzenal", "Fechamento Quinzenal", "fechamento_Quinzenal.html"],
     ["pagamentos", "Pagamentos", "pagamentos.html"],
-    ["configuracoes", "Configuracoes", "configuracoes.html"]
+    ["configurações", "Configurações", "configuracoes.html"]
 ];
 
 const today = new Date().toISOString().slice(0, 10);
