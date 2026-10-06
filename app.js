@@ -1,7 +1,7 @@
 const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
-    ["nova-saida", "Nova Saida", "nova_Saida.html"],
+    ["nova-saída", "Nova Saída", "nova_Saida.html"],
     ["fechamento", "Fechamento", "fechamento.html"],
     ["historico", "Historico", "historico.html"],
     ["fechamento-semanal", "Fechamento Semanal", "fechamento_Semanal.html"],
