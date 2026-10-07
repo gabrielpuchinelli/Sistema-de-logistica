@@ -57,10 +57,29 @@
             <form class="dashboard-entry-form" data-form="warehouse" data-admin-only>
                 <input name="data" type="hidden">
                 <input name="observacao" type="hidden" value="">
+                <label>Empresa<select name="empresa" data-company-select required></select></label>
                 <label>Pacotes recebidos hoje<input name="quantidade" type="number" min="1" step="1" placeholder="Quantidade" required></label>
                 <button class="btn btn-primary" type="submit">Registrar entrada</button>
             </form>
             <p class="form-help">Os pacotes retornados no fechamento são adicionados automaticamente ao saldo de amanhã.</p>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Pacotes por empresa</h2>
+                <span>Data: <strong data-company-stock-date></strong></span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Entrada</th>
+                        <th>Saída</th>
+                        <th>Saldo</th>
+                    </tr>
+                </thead>
+                <tbody data-company-stock-table></tbody>
+            </table>
         </section>
 
         <section class="resumo" data-admin-only>

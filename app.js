@@ -44,7 +44,7 @@ function loadData() {
 function saveData(data) {
     window.rmsSupabase.saveState(data, state.role).catch((error) => {
         console.error("Falha ao salvar no Supabase:", error);
-        toast("Nao foi possivel salvar no banco. Verifique a conexao.");
+        toast("ATENÇÃO: a alteração NÃO foi salva. Recarregue a página e tente novamente.", 8000);
     });
 }
 
@@ -149,12 +149,13 @@ function routeTotal(route) {
     return Math.max(0, Number(route.entregues || 0) * Number(route.valorPacote || 0) - Number(route.desconto || 0));
 }
 
-function dailyStock(date) {
+function dailyStock(date, company) {
+    const matches = (item) => company === undefined || item.empresa === company;
     const received = state.entradasGalpao
-        .filter((entry) => entry.data === date)
+        .filter((entry) => entry.data === date && matches(entry))
         .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
     const dispatched = state.routes
-        .filter((route) => route.data === date)
+        .filter((route) => route.data === date && matches(route))
         .reduce((sum, route) => sum + Number(route.saida || 0), 0);
     return { received, dispatched, available: received - dispatched };
 }
@@ -165,7 +166,7 @@ function setText(selector, value) {
     });
 }
 
-function toast(message) {
+function toast(message, duration = 2800) {
     const oldToast = document.querySelector(".toast");
     if (oldToast) oldToast.remove();
 
@@ -173,7 +174,7 @@ function toast(message) {
     element.className = "toast";
     element.textContent = message;
     document.body.appendChild(element);
-    setTimeout(() => element.remove(), 2800);
+    setTimeout(() => element.remove(), duration);
 }
 
 function renderShell(page) {
@@ -665,9 +666,67 @@ function renderSettings() {
     form.empresas.value = (state.settings.empresas || []).join("\n");
 }
 
+function renderCompanyStock(date) {
+    const tbody = document.querySelector("[data-company-stock-table]");
+    if (!tbody) return;
+    setText("[data-company-stock-date]", formatDate(date));
+
+    const entries = state.entradasGalpao.filter((entry) => entry.data === date);
+    const routes = state.routes.filter((route) => route.data === date);
+    const names = [...new Set([
+        ...(state.settings.empresas || []),
+        ...entries.map((entry) => entry.empresa),
+        ...routes.map((route) => route.empresa)
+    ].filter(Boolean))];
+    const rows = names.map((name) => ({ name, ...dailyStock(date, name) }));
+
+    const noCompanyReceived = entries
+        .filter((entry) => !entry.empresa)
+        .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
+    const noCompanyDispatched = routes
+        .filter((route) => !route.empresa)
+        .reduce((sum, route) => sum + Number(route.saida || 0), 0);
+    if (noCompanyReceived > 0 || noCompanyDispatched > 0) {
+        rows.push({
+            name: "Sem empresa",
+            received: noCompanyReceived,
+            dispatched: noCompanyDispatched,
+            available: noCompanyReceived - noCompanyDispatched
+        });
+    }
+
+    if (!rows.length) {
+        renderEmpty(tbody, 4, "Nenhuma empresa cadastrada. Cadastre em Configurações.");
+        return;
+    }
+
+    const total = rows.reduce((sum, row) => ({
+        received: sum.received + row.received,
+        dispatched: sum.dispatched + row.dispatched,
+        available: sum.available + row.available
+    }), { received: 0, dispatched: 0, available: 0 });
+
+    tbody.innerHTML = rows.map((row) => `
+        <tr>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${row.received}</td>
+            <td>${row.dispatched}</td>
+            <td>${row.available}</td>
+        </tr>
+    `).join("") + `
+        <tr>
+            <td><strong>Total</strong></td>
+            <td><strong>${total.received}</strong></td>
+            <td><strong>${total.dispatched}</strong></td>
+            <td><strong>${total.available}</strong></td>
+        </tr>
+    `;
+}
+
 function renderWarehouse() {
     const dateInput = document.querySelector('[data-form="warehouse"]')?.elements.namedItem("data");
     const date = dateInput?.value || today;
+    renderCompanyStock(date);
     const stock = dailyStock(date);
     setText("[data-stock-received]", stock.received);
     setText("[data-stock-dispatched]", stock.dispatched);
@@ -699,18 +758,24 @@ function updateRoutePrice(routeForm) {
 
 function refreshStockForRoute(routeForm) {
     const date = routeForm.elements.namedItem("data").value;
-    const stock = dailyStock(date);
+    const company = routeForm.elements.namedItem("empresa").value;
+    const stock = dailyStock(date, company);
     const quantity = routeForm.elements.namedItem("saida");
     quantity.removeAttribute("max");
     setText("[data-route-stock]", stock.available);
 
     const warning = document.querySelector("[data-stock-warning]");
     const entryLink = document.querySelector("[data-stock-entry-link]");
+    if (!company) {
+        if (warning) warning.hidden = true;
+        if (entryLink) entryLink.hidden = true;
+        return;
+    }
     if (warning) {
         warning.hidden = stock.available > 0;
         warning.textContent = stock.received > 0
-            ? "O saldo desta data ja foi totalmente liberado em outras saidas."
-            : "Nenhuma entrada de pacotes foi registrada para esta data.";
+            ? `O saldo de ${company} nesta data já foi totalmente liberado em outras saídas.`
+            : `Nenhuma entrada de pacotes foi registrada para ${company} nesta data.`;
     }
     if (entryLink) entryLink.hidden = stock.available > 0;
 }
@@ -865,7 +930,7 @@ function setupForms() {
                 toast("Saida registrada.");
             } catch (error) {
                 console.error("Falha ao registrar saida:", error);
-                toast(error.message?.includes("Estoque insuficiente")
+                toast(error.message?.includes("Estoque insuficiente") || error.message?.includes("Empresa nao cadastrada")
                     ? error.message
                     : "Nao foi possivel registrar a saida. Confira os dados e tente novamente.");
             } finally {
@@ -874,6 +939,7 @@ function setupForms() {
         });
         routeForm.elements.namedItem("driverId").addEventListener("change", () => updateRoutePrice(routeForm));
         routeForm.elements.namedItem("data").addEventListener("change", () => refreshStockForRoute(routeForm));
+        routeForm.elements.namedItem("empresa").addEventListener("change", () => refreshStockForRoute(routeForm));
     }
 
     const closeForm = document.querySelector('[data-form="close-route"]');
@@ -930,6 +996,7 @@ function setupForms() {
                 id: makeId(),
                 data: data.data,
                 quantidade: Number(data.quantidade),
+                empresa: String(data.empresa || "").trim(),
                 observacao: String(data.observacao || "").trim()
             };
             const submitButton = warehouseForm.querySelector('[type="submit"]');
