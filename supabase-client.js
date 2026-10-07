@@ -145,6 +145,24 @@
         return data;
     }
 
+    async function registerDriver(record) {
+        const publicData = publicDriver(record);
+        const { data, error } = await client.rpc("register_driver", {
+            p_driver: publicData,
+            p_private: {
+                cpf: record.cpf || "",
+                cnh: record.cnh || "",
+                endereco: record.endereco || "",
+                email: record.email || "",
+                pixTipo: record.pixTipo || "",
+                pixChave: record.pixChave || ""
+            }
+        });
+        if (error) throw error;
+        recordSnapshots.drivers.set(data.id, JSON.stringify(data));
+        return data;
+    }
+
     async function registerWarehouseEntry(entry) {
         const { data, error } = await client.rpc("register_warehouse_entry", { p_entry: entry });
         if (error) throw error;
@@ -169,6 +187,7 @@
         saveState,
         createRoute,
         closeRoute,
+        registerDriver,
         registerWarehouseEntry,
         clearBusinessData
     };

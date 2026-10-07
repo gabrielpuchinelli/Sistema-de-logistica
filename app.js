@@ -187,7 +187,7 @@ function renderShell(page) {
     if (menu) {
         menu.id = "main-navigation";
         const visibleMenu = state.role === "operador"
-            ? menuItems.filter(([key]) => ["dashboard", "nova-saida", "fechamento"].includes(key))
+            ? menuItems.filter(([key]) => ["dashboard", "entregadores", "nova-saida", "fechamento"].includes(key))
             : menuItems;
         menu.innerHTML = `${visibleMenu.map(([key, label, href]) => (
             `<a href="${href}" class="${key === page ? "active" : ""}">${label}</a>`
@@ -251,7 +251,7 @@ function ensureLogged(page) {
         return false;
     }
 
-    const operatorPages = ["dashboard", "nova-saida", "fechamento"];
+    const operatorPages = ["dashboard", "entregadores", "nova-saida", "fechamento"];
     if (state.role === "operador" && !operatorPages.includes(page)) {
         window.location.replace("dashboard.html");
         return false;
@@ -328,15 +328,15 @@ function renderDrivers() {
     tbody.innerHTML = state.drivers.map((driver) => `
         <tr>
             <td>${escapeHtml(driver.nome)}</td>
-            <td>${escapeHtml(driver.cpf || "-")}</td>
+            <td data-admin-only>${escapeHtml(driver.cpf || "-")}</td>
             <td>${escapeHtml(driver.telefone)}</td>
-            <td>${escapeHtml(driver.email || "-")}</td>
+            <td data-admin-only>${escapeHtml(driver.email || "-")}</td>
             <td>${escapeHtml(driver.veiculo)}</td>
-            <td>${driver.pixChave
+            <td data-admin-only>${driver.pixChave
                 ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
                 : "Sem chave cadastrada"}</td>
             <td><span class="status ${driver.status === "Ativo" ? "status-ativo" : "status-inativo"}">${driver.status}</span></td>
-            <td class="table-actions">
+            <td class="table-actions" data-admin-only>
                 <button class="btn btn-small btn-secondary" data-edit-driver="${escapeHtml(driver.id)}" type="button">
                     Editar
                 </button>
@@ -856,7 +856,7 @@ function setupForms() {
 
     const driverForm = document.querySelector('[data-form="driver"]');
     if (driverForm) {
-        driverForm.addEventListener("submit", (event) => {
+        driverForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(driverForm));
             data.pixChave = data.pixChave.trim();
@@ -874,6 +874,30 @@ function setupForms() {
             if (driverId && !existingDriver) {
                 toast("Entregador nao encontrado.");
                 resetDriverForm(driverForm);
+                return;
+            }
+
+            if (state.role === "operador") {
+                if (driverId) {
+                    toast("Operadores só podem cadastrar novos entregadores.");
+                    resetDriverForm(driverForm);
+                    return;
+                }
+                const submitButton = driverForm.querySelector("[data-driver-submit]");
+                submitButton.disabled = true;
+                try {
+                    const savedDriver = await window.rmsSupabase.registerDriver({ id: makeId(), ...data });
+                    state.drivers.push(savedDriver);
+                    resetDriverForm(driverForm);
+                    renderDrivers();
+                    fillDriverSelects();
+                    toast("Entregador cadastrado.");
+                } catch (error) {
+                    console.error("Falha ao cadastrar entregador:", error);
+                    toast("Não foi possível cadastrar o entregador. Confira os dados e tente novamente.");
+                } finally {
+                    submitButton.disabled = false;
+                }
                 return;
             }
 
