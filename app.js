@@ -4,9 +4,11 @@ const menuItems = [
     ["nova-saida", "Nova Saída", "nova_Saida.html"],
     ["fechamento", "Fechamento", "fechamento.html"],
     ["historico", "Historico", "historico.html"],
+    ["relatorio-diario", "Relatório Diário", "relatorio_Diario.html"],
     ["fechamento-semanal", "Fechamento Semanal", "fechamento_Semanal.html"],
     ["fechamento-quinzenal", "Fechamento Quinzenal", "fechamento_Quinzenal.html"],
     ["pagamentos", "Pagamentos", "pagamentos.html"],
+    ["funcionarios", "Funcionários", "funcionarios.html"],
     ["configuracoes", "Configurações", "configuracoes.html"]
 ];
 
@@ -34,7 +36,8 @@ const seedData = {
     drivers: [],
     routes: [],
     recebimentos: [],
-    entradasGalpao: []
+    entradasGalpao: [],
+    funcionarios: []
 };
 
 function loadData() {
@@ -135,6 +138,11 @@ function addCalendarDays(value, days) {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+}
+
+function sortedByName(list) {
+    return list.slice().sort((a, b) => String(a.nome || "")
+        .localeCompare(String(b.nome || ""), "pt-BR", { sensitivity: "base" }));
 }
 
 function getDriver(id) {
@@ -342,7 +350,7 @@ function renderDrivers() {
         return;
     }
 
-    tbody.innerHTML = state.drivers.map((driver) => `
+    tbody.innerHTML = sortedByName(state.drivers).map((driver) => `
         <tr>
             <td>${escapeHtml(driver.nome)}</td>
             <td data-admin-only>${escapeHtml(driver.cpf || "-")}</td>
@@ -368,7 +376,7 @@ function renderDrivers() {
 
 function fillDriverSelects() {
     document.querySelectorAll("[data-driver-select]").forEach((select) => {
-        const activeDrivers = state.drivers.filter((driver) => driver.status === "Ativo");
+        const activeDrivers = sortedByName(state.drivers.filter((driver) => driver.status === "Ativo"));
         select.innerHTML = activeDrivers.length
             ? activeDrivers.map((driver) => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.nome)} - ${escapeHtml(driver.veiculo)}</option>`).join("")
             : '<option value="">Cadastre um entregador ativo</option>';
@@ -472,7 +480,7 @@ function renderHistory(filter = "") {
     setText("[data-history-count]", `${rows.length} registros`);
 
     if (!rows.length) {
-        renderEmpty(tbody, 8, "Nenhum registro encontrado.");
+        renderEmpty(tbody, 9, "Nenhum registro encontrado.");
         return;
     }
 
@@ -488,7 +496,10 @@ function renderHistory(filter = "") {
                 <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
                 <td>${route.retornados || 0}</td>
                 <td>${money(routeTotal(route))}</td>
-                <td><span class="status ${statusClass}">${route.status}</span></td>
+                <td><span class="status ${statusClass}">${route.status}</span>${route.edicoes?.length ? ' <span class="form-help">editada</span>' : ""}</td>
+                <td class="table-actions">${route.pagamento === "Pago"
+                    ? '<span class="form-help">Pago</span>'
+                    : `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>`}</td>
             </tr>
         `;
     }).join("");
@@ -935,6 +946,208 @@ function startDriverEdit(driverForm, driver) {
     driverForm.elements.namedItem("nome").focus({ preventScroll: true });
 }
 
+function percentLabel(part, total) {
+    if (!total) return "-";
+    return `${((part / total) * 100).toFixed(1).replace(".", ",")}%`;
+}
+
+function summarizeReport(routes) {
+    const summary = { out: 0, delivered: 0, failed: 0, open: 0, openRoutes: 0 };
+    for (const route of routes) {
+        const quantity = Number(route.saida || 0);
+        summary.out += quantity;
+        if (route.status === "Fechado") {
+            const failed = Number(route.retornados || 0);
+            summary.failed += failed;
+            summary.delivered += Math.max(0, quantity - failed);
+        } else {
+            summary.open += quantity;
+            summary.openRoutes += 1;
+        }
+    }
+    return summary;
+}
+
+function groupRoutes(routes, keyOf) {
+    const groups = new Map();
+    for (const route of routes) {
+        const key = keyOf(route);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(route);
+    }
+    return groups;
+}
+
+function reportCells(summary) {
+    return `
+        <td>${summary.out}</td>
+        <td>${summary.delivered}</td>
+        <td>${summary.failed}</td>
+        <td>${percentLabel(summary.failed, summary.delivered + summary.failed)}</td>
+        <td>${summary.open}</td>`;
+}
+
+function renderDailyReport() {
+    const dateInput = document.querySelector("[data-report-date]");
+    if (!dateInput) return;
+    const date = dateInput.value || today;
+    const routes = state.routes.filter((route) => route.data === date);
+    const total = summarizeReport(routes);
+
+    setText("[data-report-title]", `Relatório diário - ${formatDate(date)}`);
+    setText('[data-report="out"]', total.out);
+    setText('[data-report="delivered"]', total.delivered);
+    setText('[data-report="failed"]', total.failed);
+    setText('[data-report="rate"]', percentLabel(total.failed, total.delivered + total.failed));
+
+    const note = document.querySelector("[data-report-note]");
+    if (note) {
+        note.hidden = total.openRoutes === 0;
+        note.textContent = `${total.openRoutes} saída(s) com ${total.open} pacote(s) ainda em aberto: entram em "Saída" e "Em aberto", mas só contam como entregues ou insucessos depois do fechamento.`;
+    }
+
+    const byName = (a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" });
+
+    const companyBody = document.querySelector("[data-report-company-table]");
+    if (companyBody) {
+        const groups = [...groupRoutes(routes, (route) => route.empresa || "Sem empresa").entries()]
+            .sort(([a], [b]) => byName(a, b));
+        if (!groups.length) {
+            renderEmpty(companyBody, 6, "Nenhuma saída registrada nesta data.");
+        } else {
+            companyBody.innerHTML = groups.map(([name, items]) => `
+                <tr>
+                    <td>${escapeHtml(name)}</td>${reportCells(summarizeReport(items))}
+                </tr>
+            `).join("");
+        }
+    }
+
+    const driverBody = document.querySelector("[data-report-driver-table]");
+    if (driverBody) {
+        const groups = [...groupRoutes(routes, (route) => route.driverId).entries()]
+            .map(([driverId, items]) => ({
+                name: getDriver(driverId)?.nome || "Entregador removido",
+                companies: [...new Set(items.map((route) => route.empresa).filter(Boolean))].join(", "),
+                items
+            }))
+            .sort((a, b) => byName(a.name, b.name));
+        if (!groups.length) {
+            renderEmpty(driverBody, 7, "Nenhuma saída registrada nesta data.");
+        } else {
+            driverBody.innerHTML = groups.map((group) => `
+                <tr>
+                    <td>${escapeHtml(group.name)}</td>
+                    <td>${escapeHtml(group.companies || "-")}</td>${reportCells(summarizeReport(group.items))}
+                </tr>
+            `).join("");
+        }
+    }
+}
+
+function renderEmployees() {
+    const tbody = document.querySelector("[data-employees-table]");
+    if (!tbody) return;
+
+    const list = sortedByName(state.funcionarios || []);
+    const active = list.filter((employee) => employee.status === "Ativo");
+    setText("[data-employee-count]", `${list.length} cadastrados`);
+    setText('[data-employee-metric="active"]', active.length);
+    setText('[data-employee-metric="payroll"]', money(active.reduce((sum, employee) => sum + Number(employee.remuneracao || 0), 0)));
+
+    if (!list.length) {
+        renderEmpty(tbody, 8, "Nenhum funcionário cadastrado.");
+        return;
+    }
+
+    tbody.innerHTML = list.map((employee) => `
+        <tr>
+            <td>${escapeHtml(employee.nome)}</td>
+            <td>${escapeHtml(employee.cpf || "-")}</td>
+            <td>${escapeHtml(employee.cargo || "-")}</td>
+            <td>${escapeHtml(employee.vinculo || "-")}</td>
+            <td>${formatDate(employee.admissao)}</td>
+            <td>${employee.remuneracao == null ? "-" : money(employee.remuneracao)}</td>
+            <td><span class="status ${employee.status === "Ativo" ? "status-ativo" : "status-inativo"}">${escapeHtml(employee.status)}</span></td>
+            <td class="table-actions">
+                <button class="btn btn-small btn-secondary" data-edit-employee="${escapeHtml(employee.id)}" type="button">Editar</button>
+                <button class="btn btn-small btn-muted" data-toggle-employee="${escapeHtml(employee.id)}" type="button">
+                    ${employee.status === "Ativo" ? "Inativar" : "Ativar"}
+                </button>
+            </td>
+        </tr>
+    `).join("");
+}
+
+function resetEmployeeForm(employeeForm) {
+    employeeForm.reset();
+    employeeForm.elements.namedItem("employeeId").value = "";
+    document.querySelector("[data-employee-form-title]").textContent = "Novo funcionário";
+    employeeForm.querySelector("[data-employee-submit]").textContent = "Cadastrar";
+    employeeForm.querySelector("[data-employee-cancel]").hidden = true;
+}
+
+function startEmployeeEdit(employeeForm, employee) {
+    employeeForm.elements.namedItem("employeeId").value = employee.id;
+    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "observacao"]) {
+        employeeForm.elements.namedItem(field).value = employee[field] || "";
+    }
+    employeeForm.elements.namedItem("remuneracao").value = employee.remuneracao == null ? "" : employee.remuneracao;
+    employeeForm.elements.namedItem("status").value = employee.status || "Ativo";
+    document.querySelector("[data-employee-form-title]").textContent = "Editar funcionário";
+    employeeForm.querySelector("[data-employee-submit]").textContent = "Salvar alterações";
+    employeeForm.querySelector("[data-employee-cancel]").hidden = false;
+    employeeForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    employeeForm.elements.namedItem("nome").focus({ preventScroll: true });
+}
+
+function closeRouteEdit() {
+    const panel = document.querySelector("[data-route-edit-panel]");
+    const form = document.querySelector('[data-form="route-edit"]');
+    if (form) form.reset();
+    if (panel) panel.hidden = true;
+}
+
+function startRouteEdit(route) {
+    const panel = document.querySelector("[data-route-edit-panel]");
+    const form = document.querySelector('[data-form="route-edit"]');
+    if (!panel || !form) return;
+
+    form.elements.namedItem("routeId").value = route.id;
+    form.elements.namedItem("data").value = route.data || "";
+
+    const driverSelect = form.elements.namedItem("driverId");
+    const drivers = sortedByName(state.drivers.filter((driver) => driver.status === "Ativo" || driver.id === route.driverId));
+    driverSelect.innerHTML = drivers.map((driver) => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.nome)} - ${escapeHtml(driver.veiculo)}</option>`).join("");
+    driverSelect.value = route.driverId;
+
+    const companySelect = form.elements.namedItem("empresa");
+    const companies = [...new Set([...(state.settings.empresas || []), route.empresa].filter(Boolean))];
+    companySelect.innerHTML = companies.map((company) => `<option value="${escapeHtml(company)}">${escapeHtml(company)}</option>`).join("");
+    companySelect.value = route.empresa || "";
+
+    form.elements.namedItem("saida").value = route.saida;
+    form.elements.namedItem("observacao").value = route.observacao || "";
+
+    const closed = route.status === "Fechado";
+    form.querySelectorAll("[data-route-edit-closed]").forEach((element) => {
+        element.style.display = closed ? "" : "none";
+    });
+    form.elements.namedItem("retornados").value = closed ? (route.retornados || 0) : "";
+    form.elements.namedItem("desconto").value = closed ? (route.desconto || 0) : "";
+    form.elements.namedItem("retornados").required = closed;
+
+    setText("[data-route-edit-title]", `Editar saída de ${formatDate(route.data)}`);
+    const edits = route.edicoes || [];
+    const last = edits[edits.length - 1];
+    setText("[data-route-edit-info]", last
+        ? `Editada ${edits.length} vez(es). Última edição em ${formatDate(String(last.em).slice(0, 10))} por ${last.por}.`
+        : "");
+
+    panel.hidden = false;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function setupForms() {
     const loginForm = document.querySelector("#loginForm");
     if (loginForm) {
@@ -965,6 +1178,121 @@ function setupForms() {
                 return;
             }
             window.location.href = "dashboard.html";
+        });
+    }
+
+    const reportDate = document.querySelector("[data-report-date]");
+    if (reportDate) {
+        reportDate.value = today;
+        reportDate.addEventListener("change", renderDailyReport);
+    }
+    const printReport = document.querySelector("[data-print-report]");
+    if (printReport) printReport.addEventListener("click", () => window.print());
+
+    const employeeForm = document.querySelector('[data-form="employee"]');
+    if (employeeForm) {
+        employeeForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const data = Object.fromEntries(new FormData(employeeForm));
+            const employeeId = data.employeeId;
+            delete data.employeeId;
+            for (const key of Object.keys(data)) {
+                if (typeof data[key] === "string") data[key] = data[key].trim();
+            }
+            if (validatePixKey("cpf", data.cpf)) {
+                toast("Informe um CPF válido.");
+                employeeForm.elements.namedItem("cpf").focus();
+                return;
+            }
+            const cpfDigits = data.cpf.replace(/\D/g, "");
+            const duplicate = state.funcionarios.find((employee) => employee.id !== employeeId
+                && String(employee.cpf || "").replace(/\D/g, "") === cpfDigits);
+            if (duplicate) {
+                toast("Já existe um funcionário com este CPF.");
+                return;
+            }
+            data.remuneracao = data.remuneracao === "" ? null : Number(data.remuneracao);
+
+            const existing = state.funcionarios.find((employee) => employee.id === employeeId);
+            if (employeeId && !existing) {
+                toast("Funcionário não encontrado.");
+                resetEmployeeForm(employeeForm);
+                return;
+            }
+            if (existing) {
+                Object.assign(existing, data);
+            } else {
+                state.funcionarios.push({ id: makeId(), ...data });
+            }
+            const saved = await saveData(state);
+            resetEmployeeForm(employeeForm);
+            renderEmployees();
+            if (saved) toast(existing ? "Cadastro atualizado." : "Funcionário cadastrado.");
+        });
+    }
+
+    const routeEditForm = document.querySelector('[data-form="route-edit"]');
+    if (routeEditForm) {
+        routeEditForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const data = Object.fromEntries(new FormData(routeEditForm));
+            const route = state.routes.find((item) => item.id === data.routeId);
+            if (!route) {
+                toast("Saída não encontrada.");
+                closeRouteEdit();
+                return;
+            }
+
+            const closed = route.status === "Fechado";
+            const changes = {
+                data: data.data,
+                driverId: data.driverId,
+                empresa: String(data.empresa || "").trim(),
+                saida: Number(data.saida),
+                observacao: String(data.observacao || "").trim()
+            };
+            if (!Number.isInteger(changes.saida) || changes.saida < 1) {
+                toast("Informe uma quantidade de pacotes válida.");
+                return;
+            }
+            if (closed) {
+                changes.retornados = Number(data.retornados || 0);
+                changes.desconto = Number(data.desconto || 0);
+                if (!Number.isInteger(changes.retornados) || changes.retornados < 0 || changes.retornados > changes.saida) {
+                    toast("Os pacotes retornados devem ser um número entre 0 e o total da saída.");
+                    return;
+                }
+                if (!(changes.desconto >= 0)) {
+                    toast("O desconto não pode ser negativo.");
+                    return;
+                }
+            }
+
+            const submitButton = routeEditForm.querySelector('[type="submit"]');
+            submitButton.disabled = true;
+            try {
+                const result = await window.rmsSupabase.updateRoute(route.id, changes);
+                const index = state.routes.findIndex((item) => item.id === route.id);
+                state.routes[index] = result.route;
+                if (result.removed_entry_id) {
+                    state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== result.removed_entry_id);
+                }
+                if (result.warehouse_entry) {
+                    const entryIndex = state.entradasGalpao.findIndex((entry) => entry.id === result.warehouse_entry.id);
+                    if (entryIndex >= 0) state.entradasGalpao[entryIndex] = result.warehouse_entry;
+                    else state.entradasGalpao.push(result.warehouse_entry);
+                }
+                closeRouteEdit();
+                renderHistory(document.querySelector("[data-search-history]")?.value || "");
+                toast("Saída atualizada.");
+            } catch (error) {
+                console.error("Falha ao editar saída:", error);
+                toast(error.code === "P0001"
+                    ? error.message
+                    : "Não foi possível salvar a alteração. Confira os dados e tente novamente.", 6000);
+            } finally {
+                submitButton.disabled = false;
+            }
         });
     }
 
@@ -1285,6 +1613,37 @@ function setupActions() {
             }
         }
 
+        const editRouteButton = event.target.closest("[data-edit-route]");
+        if (editRouteButton) {
+            const route = state.routes.find((item) => item.id === editRouteButton.dataset.editRoute);
+            if (route) startRouteEdit(route);
+        }
+
+        if (event.target.closest("[data-route-edit-cancel]")) closeRouteEdit();
+
+        const editEmployeeButton = event.target.closest("[data-edit-employee]");
+        if (editEmployeeButton) {
+            const employee = state.funcionarios.find((item) => item.id === editEmployeeButton.dataset.editEmployee);
+            const employeeForm = document.querySelector('[data-form="employee"]');
+            if (employee && employeeForm) startEmployeeEdit(employeeForm, employee);
+        }
+
+        if (event.target.closest("[data-employee-cancel]")) {
+            const employeeForm = document.querySelector('[data-form="employee"]');
+            if (employeeForm) resetEmployeeForm(employeeForm);
+        }
+
+        const toggleEmployeeButton = event.target.closest("[data-toggle-employee]");
+        if (toggleEmployeeButton) {
+            const employee = state.funcionarios.find((item) => item.id === toggleEmployeeButton.dataset.toggleEmployee);
+            if (employee) {
+                employee.status = employee.status === "Ativo" ? "Inativo" : "Ativo";
+                saveData(state);
+                renderEmployees();
+                toast("Status atualizado.");
+            }
+        }
+
         const payButton = event.target.closest("[data-pay-route]");
         if (payButton) {
             const route = state.routes.find((item) => item.id === payButton.dataset.payRoute);
@@ -1403,6 +1762,8 @@ function renderPage() {
     renderFortnight();
     renderSettings();
     renderWarehouse();
+    renderDailyReport();
+    renderEmployees();
     const routeForm = document.querySelector('[data-form="route"]');
     if (routeForm) updateRoutePrice(routeForm);
     const closeForm = document.querySelector('[data-form="close-route"]');

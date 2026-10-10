@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <title>RMSLogis | Relatório diário</title>
+</head>
+<body data-page="relatorio-diario">
+    <aside class="sidebar">
+        <a class="logo" href="dashboard.html">RMSLogis</a>
+        <nav class="menu" aria-label="Menu principal"></nav>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <h1 data-report-title>Relatório diário</h1>
+                <p>Pacotes entregues e insucessos do dia</p>
+            </div>
+            <div class="usuario" data-user>Operador</div>
+        </header>
+
+        <section class="filters no-print">
+            <label>Data<input type="date" data-report-date></label>
+            <button class="btn btn-secondary" data-print-report type="button">Imprimir ou salvar em PDF</button>
+        </section>
+
+        <section class="cards">
+            <article class="card">
+                <h3>Pacotes na saída</h3>
+                <div class="numero" data-report="out">0</div>
+                <div class="descricao">Total liberado na data</div>
+            </article>
+            <article class="card">
+                <h3>Entregues</h3>
+                <div class="numero" data-report="delivered">0</div>
+                <div class="descricao">Saídas já fechadas</div>
+            </article>
+            <article class="card">
+                <h3>Insucessos</h3>
+                <div class="numero financial-negative" data-report="failed">0</div>
+                <div class="descricao">Pacotes que voltaram ao galpão</div>
+            </article>
+            <article class="card">
+                <h3>Taxa de insucesso</h3>
+                <div class="numero" data-report="rate">-</div>
+                <div class="descricao">Insucessos sobre saídas fechadas</div>
+            </article>
+        </section>
+        <p class="form-help" data-report-note hidden></p>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Por empresa</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Saída</th>
+                        <th>Entregues</th>
+                        <th>Insucessos</th>
+                        <th>Taxa</th>
+                        <th>Em aberto</th>
+                    </tr>
+                </thead>
+                <tbody data-report-company-table></tbody>
+            </table>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Por entregador</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Entregador</th>
+                        <th>Empresa</th>
+                        <th>Saída</th>
+                        <th>Entregues</th>
+                        <th>Insucessos</th>
+                        <th>Taxa</th>
+                        <th>Em aberto</th>
+                    </tr>
+                </thead>
+                <tbody data-report-driver-table></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-client.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

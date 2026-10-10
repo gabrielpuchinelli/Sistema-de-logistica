@@ -68,6 +68,15 @@
                 ...(privateById.get(driver.id) || {})
             }));
         }
+        loaded.funcionarios = [];
+        if (defaults.role === "admin") {
+            const { data, error } = await client.from("employees").select("payload");
+            if (error) console.error("Falha ao carregar funcionarios:", error);
+            else loaded.funcionarios = (data || []).map((row) => row.payload);
+        }
+        recordSnapshots.funcionarios = new Map(
+            loaded.funcionarios.map((record) => [record.id, JSON.stringify(record)])
+        );
         settingsSnapshot = JSON.stringify(loaded.settings);
         return { ...defaults, ...loaded };
     }
@@ -111,6 +120,17 @@
                 }
             }
 
+            if (role === "admin") {
+                const employeeRows = (state.funcionarios || [])
+                    .map((record) => ({ id: record.id, payload: record }))
+                    .filter((row) => recordSnapshots.funcionarios.get(row.id) !== JSON.stringify(row.payload));
+                if (employeeRows.length) {
+                    const { error } = await client.from("employees").upsert(employeeRows, { onConflict: "id" });
+                    if (error) throw error;
+                    for (const row of employeeRows) recordSnapshots.funcionarios.set(row.id, JSON.stringify(row.payload));
+                }
+            }
+
             const nextSettings = JSON.stringify(state.settings);
             if (role === "admin" && nextSettings !== settingsSnapshot) {
                 const { error } = await client.from("app_settings").upsert(
@@ -144,6 +164,20 @@
                 data.warehouse_entry.id,
                 JSON.stringify(data.warehouse_entry)
             );
+        }
+        return data;
+    }
+
+    async function updateRoute(routeId, changes) {
+        const { data, error } = await client.rpc("update_route", {
+            p_route_id: routeId,
+            p_changes: changes
+        });
+        if (error) throw error;
+        recordSnapshots.routes.set(data.route.id, JSON.stringify(data.route));
+        if (data.removed_entry_id) recordSnapshots.entradasGalpao.delete(data.removed_entry_id);
+        if (data.warehouse_entry) {
+            recordSnapshots.entradasGalpao.set(data.warehouse_entry.id, JSON.stringify(data.warehouse_entry));
         }
         return data;
     }
@@ -214,6 +248,7 @@
         saveState,
         createRoute,
         closeRoute,
+        updateRoute,
         registerDriver,
         uploadDriverDocument,
         getDriverDocumentUrl,

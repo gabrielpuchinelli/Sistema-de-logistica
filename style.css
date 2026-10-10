@@ -873,3 +873,37 @@ td {
         padding: 11px 9px;
     }
 }
+
+@media print {
+    .sidebar,
+    .mobile-menu-toggle,
+    .mobile-menu-backdrop,
+    .no-print,
+    .toast {
+        display: none !important;
+    }
+
+    body {
+        background: var(--branco);
+    }
+
+    .main {
+        margin-left: 0;
+        padding: 0;
+    }
+
+    .card,
+    .tabela-container,
+    .form-panel,
+    .resumo {
+        box-shadow: none;
+    }
+
+    table {
+        min-width: 0;
+    }
+
+    .cards {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}

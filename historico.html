@@ -21,6 +21,24 @@
             <div class="usuario" data-user>Operador</div>
         </header>
 
+        <section class="form-panel" data-route-edit-panel hidden>
+            <h2 data-route-edit-title>Editar saída</h2>
+            <form class="form-grid" data-form="route-edit">
+                <input name="routeId" type="hidden">
+                <label>Data<input name="data" type="date" required></label>
+                <label>Entregador<select name="driverId" required></select></label>
+                <label>Empresa<select name="empresa" required></select></label>
+                <label>Pacotes na saída<input name="saida" type="number" min="1" step="1" required></label>
+                <label data-route-edit-closed>Pacotes retornados (insucessos)<input name="retornados" type="number" min="0" step="1"></label>
+                <label data-route-edit-closed>Desconto<input name="desconto" type="number" min="0" step="0.01"></label>
+                <label>Observação<input name="observacao" type="text" placeholder="Opcional" maxlength="200"></label>
+                <button class="btn btn-primary" type="submit">Salvar alterações</button>
+                <button class="btn btn-muted" data-route-edit-cancel type="button">Cancelar</button>
+            </form>
+            <p class="form-help" data-route-edit-info></p>
+            <p class="form-help">Saídas já pagas não podem ser editadas: desfaça o pagamento primeiro. O saldo de pacotes de cada empresa não pode ficar negativo por causa da edição, e cada alteração fica registrada.</p>
+        </section>
+
         <section class="filters">
             <label>Buscar<input data-search-history type="search" placeholder="Entregador, data ou status"></label>
             <button class="btn btn-secondary" data-export-history type="button">Exportar Excel</button>
@@ -42,6 +60,7 @@
                         <th>Retornados</th>
                         <th>Valor</th>
                         <th>Status</th>
+                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody data-history-table></tbody>
