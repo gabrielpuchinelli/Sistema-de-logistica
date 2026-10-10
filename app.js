@@ -42,9 +42,10 @@ function loadData() {
 }
 
 function saveData(data) {
-    window.rmsSupabase.saveState(data, state.role).catch((error) => {
+    return window.rmsSupabase.saveState(data, state.role).then(() => true).catch((error) => {
         console.error("Falha ao salvar no Supabase:", error);
         toast("ATENÇÃO: a alteração NÃO foi salva. Recarregue a página e tente novamente.", 8000);
+        return false;
     });
 }
 
@@ -314,6 +315,22 @@ function renderDashboard() {
     }).join("");
 }
 
+function driverDocumentsCell(driver) {
+    const buttons = [];
+    if (driver.docIdentidade) {
+        buttons.push(`<button class="btn btn-small btn-muted" data-open-doc="${escapeHtml(driver.id)}" data-doc-kind="identidade" type="button">Identidade</button>`);
+    }
+    if (driver.docResidencia) {
+        buttons.push(`<button class="btn btn-small btn-muted" data-open-doc="${escapeHtml(driver.id)}" data-doc-kind="residencia" type="button">Residência</button>`);
+    }
+    const missing = [
+        !driver.docIdentidade && "identidade",
+        !driver.docResidencia && "residência"
+    ].filter(Boolean);
+    const pending = missing.length ? `<span class="form-help">Pendente: ${missing.join(", ")}</span>` : "";
+    return `<td class="table-actions" data-admin-only>${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
+}
+
 function renderDrivers() {
     const tbody = document.querySelector("[data-drivers-table]");
     if (!tbody) return;
@@ -321,7 +338,7 @@ function renderDrivers() {
     setText("[data-driver-count]", `${state.drivers.length} cadastrados`);
 
     if (!state.drivers.length) {
-        renderEmpty(tbody, 8, "Nenhum entregador cadastrado.");
+        renderEmpty(tbody, 9, "Nenhum entregador cadastrado.");
         return;
     }
 
@@ -336,6 +353,7 @@ function renderDrivers() {
                 ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
                 : "Sem chave cadastrada"}</td>
             <td><span class="status ${driver.status === "Ativo" ? "status-ativo" : "status-inativo"}">${driver.status}</span></td>
+            ${driverDocumentsCell(driver)}
             <td class="table-actions" data-admin-only>
                 <button class="btn btn-small btn-secondary" data-edit-driver="${escapeHtml(driver.id)}" type="button">
                     Editar
@@ -794,12 +812,107 @@ function updateClosurePreview(closeForm) {
     closeForm.elements.namedItem("desconto").max = route ? delivered * Number(route.valorPacote || 0) : 0;
 }
 
+const DOCUMENT_FIELDS = [
+    ["identidade", "docIdentidade", "arquivoIdentidade"],
+    ["residencia", "docResidencia", "arquivoResidencia"]
+];
+const DOCUMENT_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+const DOCUMENT_MAX_BYTES = 2 * 1024 * 1024;
+const DOCUMENT_MAX_SIDE = 1600;
+
+function documentError(message) {
+    const error = new Error(message);
+    error.userMessage = message;
+    return error;
+}
+
+function loadImageFile(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(image);
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(documentError("Não foi possível ler a imagem. Tente outro arquivo (JPG, PNG ou PDF)."));
+        };
+        image.src = url;
+    });
+}
+
+function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function prepareDocument(file) {
+    if (!DOCUMENT_TYPES.includes(file.type)) {
+        throw documentError("Formato não aceito. Envie PDF, JPG ou PNG.");
+    }
+    if (file.type === "application/pdf") {
+        if (file.size > DOCUMENT_MAX_BYTES) {
+            throw documentError("O PDF passa de 2 MB. Reduza o arquivo ou envie uma foto do documento.");
+        }
+        return { blob: file, type: "application/pdf", ext: "pdf" };
+    }
+
+    const image = await loadImageFile(file);
+    const scale = Math.min(1, DOCUMENT_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    let quality = 0.8;
+    let blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    while (blob && blob.size > DOCUMENT_MAX_BYTES && quality > 0.4) {
+        quality -= 0.1;
+        blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    }
+    if (!blob || blob.size > DOCUMENT_MAX_BYTES) {
+        throw documentError("Não foi possível reduzir a imagem. Tente uma foto menor.");
+    }
+    return { blob, type: "image/jpeg", ext: "jpg" };
+}
+
+async function openDriverDocument(path) {
+    const target = window.open("", "_blank");
+    try {
+        const url = await window.rmsSupabase.getDriverDocumentUrl(path);
+        if (target) {
+            target.opener = null;
+            target.location.href = url;
+        } else {
+            window.location.href = url;
+        }
+    } catch (error) {
+        console.error("Falha ao abrir documento:", error);
+        if (target) target.close();
+        toast("Não foi possível abrir o documento.");
+    }
+}
+
+function updateDocumentHints(driverForm, driver) {
+    for (const [kind, field] of DOCUMENT_FIELDS) {
+        const hint = driverForm.querySelector(`[data-doc-status="${kind}"]`);
+        if (!hint) continue;
+        hint.textContent = !driver ? "" : driver[field]
+            ? "Já enviado. Escolha outro arquivo para substituir."
+            : "Nenhum arquivo enviado.";
+    }
+}
+
 function resetDriverForm(driverForm) {
     driverForm.reset();
     driverForm.elements.namedItem("driverId").value = "";
     document.querySelector("[data-driver-form-title]").textContent = "Novo entregador";
     driverForm.querySelector("[data-driver-submit]").textContent = "Cadastrar";
     driverForm.querySelector("[data-driver-cancel]").hidden = true;
+    updateDocumentHints(driverForm, null);
 }
 
 function startDriverEdit(driverForm, driver) {
@@ -817,6 +930,7 @@ function startDriverEdit(driverForm, driver) {
     document.querySelector("[data-driver-form-title]").textContent = "Editar entregador";
     driverForm.querySelector("[data-driver-submit]").textContent = "Salvar alteracoes";
     driverForm.querySelector("[data-driver-cancel]").hidden = false;
+    updateDocumentHints(driverForm, driver);
     driverForm.scrollIntoView({ behavior: "smooth", block: "start" });
     driverForm.elements.namedItem("nome").focus({ preventScroll: true });
 }
@@ -859,6 +973,8 @@ function setupForms() {
         driverForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(driverForm));
+            delete data.arquivoIdentidade;
+            delete data.arquivoResidencia;
             data.pixChave = data.pixChave.trim();
             const pixError = validatePixKey(data.pixTipo, data.pixChave);
             if (pixError) {
@@ -877,40 +993,58 @@ function setupForms() {
                 return;
             }
 
-            if (state.role === "operador") {
-                if (driverId) {
-                    toast("Operadores só podem cadastrar novos entregadores.");
-                    resetDriverForm(driverForm);
-                    return;
-                }
-                const submitButton = driverForm.querySelector("[data-driver-submit]");
-                submitButton.disabled = true;
-                try {
-                    const savedDriver = await window.rmsSupabase.registerDriver({ id: makeId(), ...data });
-                    state.drivers.push(savedDriver);
-                    resetDriverForm(driverForm);
-                    renderDrivers();
-                    fillDriverSelects();
-                    toast("Entregador cadastrado.");
-                } catch (error) {
-                    console.error("Falha ao cadastrar entregador:", error);
-                    toast("Não foi possível cadastrar o entregador. Confira os dados e tente novamente.");
-                } finally {
-                    submitButton.disabled = false;
-                }
+            const submitButton = driverForm.querySelector("[data-driver-submit]");
+            if (state.role === "operador" && driverId) {
+                toast("Operadores só podem cadastrar novos entregadores.");
+                resetDriverForm(driverForm);
                 return;
             }
 
-            if (existingDriver) {
-                Object.assign(existingDriver, data);
-            } else {
-                state.drivers.push({ id: makeId(), ...data });
+            const targetId = existingDriver ? existingDriver.id : makeId();
+            const documentPaths = {};
+            const replacedPaths = [];
+            submitButton.disabled = true;
+            try {
+                for (const [kind, field, inputName] of DOCUMENT_FIELDS) {
+                    const file = driverForm.elements.namedItem(inputName).files[0];
+                    if (!file) continue;
+                    const prepared = await prepareDocument(file);
+                    documentPaths[field] = await window.rmsSupabase.uploadDriverDocument(targetId, kind, prepared);
+                    if (existingDriver && existingDriver[field]) replacedPaths.push(existingDriver[field]);
+                }
+            } catch (error) {
+                console.error("Falha ao enviar documento:", error);
+                toast(error.userMessage || "Não foi possível enviar os documentos. Tente novamente.");
+                submitButton.disabled = false;
+                return;
             }
-            saveData(state);
-            resetDriverForm(driverForm);
-            renderDrivers();
-            fillDriverSelects();
-            toast(existingDriver ? "Cadastro atualizado." : "Entregador cadastrado.");
+
+            let succeeded = true;
+            try {
+                if (state.role === "operador") {
+                    const savedDriver = await window.rmsSupabase.registerDriver({ id: targetId, ...data, ...documentPaths });
+                    state.drivers.push(savedDriver);
+                } else if (existingDriver) {
+                    Object.assign(existingDriver, data, documentPaths);
+                    succeeded = await saveData(state);
+                    if (succeeded && replacedPaths.length) {
+                        window.rmsSupabase.removeDriverDocuments(replacedPaths)
+                            .catch((error) => console.error("Falha ao remover documento antigo:", error));
+                    }
+                } else {
+                    state.drivers.push({ id: targetId, ...data, ...documentPaths });
+                    succeeded = await saveData(state);
+                }
+                resetDriverForm(driverForm);
+                renderDrivers();
+                fillDriverSelects();
+                if (succeeded) toast(existingDriver ? "Cadastro atualizado." : "Entregador cadastrado.");
+            } catch (error) {
+                console.error("Falha ao cadastrar entregador:", error);
+                toast("Não foi possível cadastrar o entregador. Confira os dados e tente novamente.");
+            } finally {
+                submitButton.disabled = false;
+            }
         });
     }
 
@@ -1125,6 +1259,13 @@ function setupActions() {
             const driver = getDriver(editDriverButton.dataset.editDriver);
             const driverForm = document.querySelector('[data-form="driver"]');
             if (driver && driverForm) startDriverEdit(driverForm, driver);
+        }
+
+        const openDocButton = event.target.closest("[data-open-doc]");
+        if (openDocButton) {
+            const driver = getDriver(openDocButton.dataset.openDoc);
+            const field = openDocButton.dataset.docKind === "identidade" ? "docIdentidade" : "docResidencia";
+            if (driver && driver[field]) openDriverDocument(driver[field]);
         }
 
         const cancelDriverButton = event.target.closest("[data-driver-cancel]");

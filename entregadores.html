@@ -55,6 +55,8 @@
                     </select>
                 </label>
                 <label>Chave Pix<input name="pixChave" type="text" placeholder="Informe a chave Pix" autocomplete="off"></label>
+                <label>Identidade (PDF, JPG ou PNG)<input name="arquivoIdentidade" type="file" accept="image/jpeg,image/png,application/pdf"><span class="form-help" data-doc-status="identidade"></span></label>
+                <label>Comprovante de residência (PDF, JPG ou PNG)<input name="arquivoResidencia" type="file" accept="image/jpeg,image/png,application/pdf"><span class="form-help" data-doc-status="residencia"></span></label>
                 <button class="btn btn-primary" data-driver-submit type="submit">Cadastrar</button>
                 <button class="btn btn-muted" data-driver-cancel hidden type="button">Cancelar edicao</button>
             </form>
@@ -75,6 +77,7 @@
                         <th>Veiculo</th>
                         <th data-admin-only>Chave Pix</th>
                         <th>Status</th>
+                        <th data-admin-only>Documentos</th>
                         <th data-admin-only>Acoes</th>
                     </tr>
                 </thead>

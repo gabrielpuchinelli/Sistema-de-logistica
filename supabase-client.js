@@ -11,13 +11,14 @@
         entradasGalpao: "warehouse_entries",
         recebimentos: "receipts"
     };
+    const DOCS_BUCKET = "driver-docs";
     let settingsSnapshot = null;
     const recordSnapshots = {};
     const privateDriverSnapshots = new Map();
     let writeQueue = Promise.resolve();
 
     function publicDriver(record) {
-        const { cpf, cnh, endereco, email, pixTipo, pixChave, ...publicData } = record;
+        const { cpf, cnh, endereco, email, pixTipo, pixChave, docIdentidade, docResidencia, ...publicData } = record;
         return publicData;
     }
 
@@ -97,7 +98,9 @@
                             endereco: record.endereco || "",
                             email: record.email || "",
                             pixTipo: record.pixTipo || "",
-                            pixChave: record.pixChave || ""
+                            pixChave: record.pixChave || "",
+                            docIdentidade: record.docIdentidade || "",
+                            docResidencia: record.docResidencia || ""
                         }
                     })).filter((row) => privateDriverSnapshots.get(row.id) !== JSON.stringify(row.payload));
                     if (privateRows.length) {
@@ -155,12 +158,36 @@
                 endereco: record.endereco || "",
                 email: record.email || "",
                 pixTipo: record.pixTipo || "",
-                pixChave: record.pixChave || ""
+                pixChave: record.pixChave || "",
+                docIdentidade: record.docIdentidade || "",
+                docResidencia: record.docResidencia || ""
             }
         });
         if (error) throw error;
         recordSnapshots.drivers.set(data.id, JSON.stringify(data));
         return data;
+    }
+
+    async function uploadDriverDocument(driverId, kind, prepared) {
+        const path = `${driverId}/${kind}-${Date.now()}.${prepared.ext}`;
+        const { error } = await client.storage
+            .from(DOCS_BUCKET)
+            .upload(path, prepared.blob, { contentType: prepared.type, upsert: false });
+        if (error) throw error;
+        return path;
+    }
+
+    async function getDriverDocumentUrl(path) {
+        const { data, error } = await client.storage.from(DOCS_BUCKET).createSignedUrl(path, 60);
+        if (error) throw error;
+        return data.signedUrl;
+    }
+
+    async function removeDriverDocuments(paths) {
+        const list = paths.filter(Boolean);
+        if (!list.length) return;
+        const { error } = await client.storage.from(DOCS_BUCKET).remove(list);
+        if (error) throw error;
     }
 
     async function registerWarehouseEntry(entry) {
@@ -188,6 +215,9 @@
         createRoute,
         closeRoute,
         registerDriver,
+        uploadDriverDocument,
+        getDriverDocumentUrl,
+        removeDriverDocuments,
         registerWarehouseEntry,
         clearBusinessData
     };
