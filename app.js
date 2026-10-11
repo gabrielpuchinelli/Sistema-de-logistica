@@ -1089,7 +1089,7 @@ function resetEmployeeForm(employeeForm) {
 
 function startEmployeeEdit(employeeForm, employee) {
     employeeForm.elements.namedItem("employeeId").value = employee.id;
-    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "observacao"]) {
+    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "endereco", "observacao"]) {
         employeeForm.elements.namedItem(field).value = employee[field] || "";
     }
     employeeForm.elements.namedItem("remuneracao").value = employee.remuneracao == null ? "" : employee.remuneracao;
