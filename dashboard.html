@@ -51,17 +51,38 @@
 
         <section class="form-panel dashboard-entry">
             <div class="section-title">
-                <h2>Entrada de pacotes</h2>
+                <h2 data-entry-title>Entrada de pacotes</h2>
                 <span>Saldo no galpão em <strong data-stock-date></strong>: <strong data-stock-available>0</strong></span>
             </div>
             <form class="dashboard-entry-form" data-form="warehouse">
+                <input name="entryId" type="hidden">
                 <label>Data<input name="data" type="date" required></label>
                 <input name="observacao" type="hidden" value="">
                 <label>Empresa<select name="empresa" data-company-select required></select></label>
                 <label>Pacotes recebidos<input name="quantidade" type="number" min="1" step="1" placeholder="Quantidade" required></label>
-                <button class="btn btn-primary" type="submit">Registrar entrada</button>
+                <button class="btn btn-primary" data-entry-submit type="submit">Registrar entrada</button>
+                <button class="btn btn-muted" data-entry-cancel hidden type="button">Cancelar edição</button>
             </form>
             <p class="form-help">Para registrar pacotes de dias anteriores, escolha a data. Os pacotes retornados no fechamento são adicionados automaticamente ao saldo do dia seguinte.</p>
+        </section>
+
+        <section class="tabela-container" data-admin-only>
+            <div class="section-title">
+                <h2>Entradas de pacotes na data</h2>
+                <span>Corrija a quantidade, a data ou a empresa de uma entrada manual</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Quantidade</th>
+                        <th>Origem</th>
+                        <th>Observação</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody data-warehouse-table></tbody>
+            </table>
         </section>
 
         <section class="tabela-container">

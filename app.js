@@ -766,16 +766,23 @@ function renderWarehouse() {
     if (!tbody) return;
     const entries = state.entradasGalpao.filter((entry) => entry.data === date).slice().reverse();
     if (!entries.length) {
-        renderEmpty(tbody, 3, "Nenhuma entrada registrada para esta data.");
+        renderEmpty(tbody, 5, "Nenhuma entrada registrada para esta data.");
         return;
     }
-    tbody.innerHTML = entries.map((entry) => `
+    tbody.innerHTML = entries.map((entry) => {
+        const manual = !entry.origem && !entry.routeId;
+        return `
         <tr>
-            <td>${formatDate(entry.data)}</td>
+            <td>${escapeHtml(entry.empresa || "Sem empresa")}</td>
             <td>${entry.quantidade}</td>
+            <td>${manual ? "Manual" : "Retorno de rota"}</td>
             <td>${escapeHtml(entry.observacao || "-")}</td>
-        </tr>
-    `).join("");
+            <td class="table-actions">${manual
+                ? `<button class="btn btn-small btn-secondary" data-edit-entry="${escapeHtml(entry.id)}" type="button">Editar</button>
+                   <button class="btn btn-small btn-danger" data-delete-entry="${escapeHtml(entry.id)}" type="button">Excluir</button>`
+                : '<span class="form-help">Edite pela saída no Histórico</span>'}</td>
+        </tr>`;
+    }).join("");
 }
 
 function updateRoutePrice(routeForm) {
@@ -1100,6 +1107,79 @@ function startEmployeeEdit(employeeForm, employee) {
     employeeForm.querySelector("[data-employee-cancel]").hidden = false;
     employeeForm.scrollIntoView({ behavior: "smooth", block: "start" });
     employeeForm.elements.namedItem("nome").focus({ preventScroll: true });
+}
+
+function resetEntryForm(form) {
+    const keepDate = form.elements.namedItem("data").value || today;
+    form.reset();
+    form.elements.namedItem("data").value = keepDate;
+    form.elements.namedItem("entryId").value = "";
+    form.querySelector("[data-entry-submit]").textContent = "Registrar entrada";
+    form.querySelector("[data-entry-cancel]").hidden = true;
+    setText("[data-entry-title]", "Entrada de pacotes");
+}
+
+function startEntryEdit(entry) {
+    const form = document.querySelector('[data-form="warehouse"]');
+    if (!form) return;
+    form.elements.namedItem("entryId").value = entry.id;
+    form.elements.namedItem("data").value = entry.data;
+    const select = form.elements.namedItem("empresa");
+    if (entry.empresa && ![...select.options].some((option) => option.value === entry.empresa)) {
+        select.add(new Option(entry.empresa, entry.empresa));
+    }
+    select.value = entry.empresa || "";
+    form.elements.namedItem("quantidade").value = entry.quantidade;
+    form.querySelector("[data-entry-submit]").textContent = "Salvar alteração";
+    form.querySelector("[data-entry-cancel]").hidden = false;
+    setText("[data-entry-title]", "Editar entrada de pacotes");
+    renderWarehouse();
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function saveEntryEdit(form, data) {
+    const changes = {
+        data: data.data,
+        empresa: String(data.empresa || "").trim(),
+        quantidade: Number(data.quantidade)
+    };
+    if (!Number.isInteger(changes.quantidade) || changes.quantidade < 1) {
+        toast("Informe uma quantidade de pacotes válida.");
+        return;
+    }
+    const submitButton = form.querySelector("[data-entry-submit]");
+    submitButton.disabled = true;
+    try {
+        const updated = await window.rmsSupabase.updateWarehouseEntry(data.entryId, changes);
+        const index = state.entradasGalpao.findIndex((entry) => entry.id === updated.id);
+        if (index >= 0) state.entradasGalpao[index] = updated;
+        resetEntryForm(form);
+        renderWarehouse();
+        toast("Entrada atualizada.");
+    } catch (error) {
+        console.error("Falha ao editar entrada:", error);
+        toast(error.code === "P0001"
+            ? error.message
+            : "Não foi possível salvar a alteração. Tente novamente.", 6000);
+    } finally {
+        submitButton.disabled = false;
+    }
+}
+
+async function removeWarehouseEntry(entryId) {
+    try {
+        await window.rmsSupabase.deleteWarehouseEntry(entryId);
+        state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== entryId);
+        const form = document.querySelector('[data-form="warehouse"]');
+        if (form && form.elements.namedItem("entryId").value === entryId) resetEntryForm(form);
+        renderWarehouse();
+        toast("Entrada excluída.");
+    } catch (error) {
+        console.error("Falha ao excluir entrada:", error);
+        toast(error.code === "P0001"
+            ? error.message
+            : "Não foi possível excluir a entrada. Tente novamente.", 6000);
+    }
 }
 
 function closeRouteEdit() {
@@ -1480,6 +1560,10 @@ function setupForms() {
         warehouseForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(warehouseForm));
+            if (data.entryId) {
+                await saveEntryEdit(warehouseForm, data);
+                return;
+            }
             const entry = {
                 id: makeId(),
                 data: data.data,
@@ -1612,6 +1696,25 @@ function setupActions() {
                 saveData(state);
                 renderDrivers();
                 toast("Status atualizado.");
+            }
+        }
+
+        const editEntryButton = event.target.closest("[data-edit-entry]");
+        if (editEntryButton) {
+            const entry = state.entradasGalpao.find((item) => item.id === editEntryButton.dataset.editEntry);
+            if (entry) startEntryEdit(entry);
+        }
+
+        if (event.target.closest("[data-entry-cancel]")) {
+            const entryForm = document.querySelector('[data-form="warehouse"]');
+            if (entryForm) resetEntryForm(entryForm);
+        }
+
+        const deleteEntryButton = event.target.closest("[data-delete-entry]");
+        if (deleteEntryButton) {
+            const entry = state.entradasGalpao.find((item) => item.id === deleteEntryButton.dataset.deleteEntry);
+            if (entry && window.confirm(`Excluir a entrada de ${entry.quantidade} pacote(s) de ${entry.empresa || "empresa não informada"} em ${formatDate(entry.data)}? Esta ação não pode ser desfeita.`)) {
+                removeWarehouseEntry(entry.id);
             }
         }
 

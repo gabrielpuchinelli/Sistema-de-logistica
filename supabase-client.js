@@ -168,6 +168,22 @@
         return data;
     }
 
+    async function updateWarehouseEntry(entryId, changes) {
+        const { data, error } = await client.rpc("update_warehouse_entry", {
+            p_entry_id: entryId,
+            p_changes: changes
+        });
+        if (error) throw error;
+        recordSnapshots.entradasGalpao.set(data.entry.id, JSON.stringify(data.entry));
+        return data.entry;
+    }
+
+    async function deleteWarehouseEntry(entryId) {
+        const { error } = await client.rpc("delete_warehouse_entry", { p_entry_id: entryId });
+        if (error) throw error;
+        recordSnapshots.entradasGalpao.delete(entryId);
+    }
+
     async function updateRoute(routeId, changes) {
         const { data, error } = await client.rpc("update_route", {
             p_route_id: routeId,
@@ -249,6 +265,8 @@
         createRoute,
         closeRoute,
         updateRoute,
+        updateWarehouseEntry,
+        deleteWarehouseEntry,
         registerDriver,
         uploadDriverDocument,
         getDriverDocumentUrl,
