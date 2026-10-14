@@ -756,6 +756,7 @@ function renderWarehouse() {
     const dateInput = document.querySelector('[data-form="warehouse"]')?.elements.namedItem("data");
     const date = dateInput?.value || today;
     renderCompanyStock(date);
+    setText("[data-stock-date]", formatDate(date));
     const stock = dailyStock(date);
     setText("[data-stock-received]", stock.received);
     setText("[data-stock-dispatched]", stock.dispatched);
@@ -1475,6 +1476,7 @@ function setupForms() {
     const warehouseForm = document.querySelector('[data-form="warehouse"]');
     if (warehouseForm) {
         warehouseForm.elements.namedItem("data").value = today;
+        warehouseForm.elements.namedItem("data").max = today;
         warehouseForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(warehouseForm));
@@ -1491,7 +1493,7 @@ function setupForms() {
                 const savedEntry = await window.rmsSupabase.registerWarehouseEntry(entry);
                 state.entradasGalpao.push(savedEntry);
                 warehouseForm.reset();
-                warehouseForm.elements.namedItem("data").value = today;
+                warehouseForm.elements.namedItem("data").value = entry.data;
                 renderWarehouse();
                 toast("Entrada de pacotes registrada.");
             } catch (error) {
