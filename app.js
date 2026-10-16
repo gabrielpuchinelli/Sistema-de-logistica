@@ -1,23 +1,16 @@
 const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
-    ["nova-saida", "Nova Saída", "nova_Saida.html"],
+    ["nova-saída", "Nova Saída", "nova_Saida.html"],
     ["fechamento", "Fechamento", "fechamento.html"],
     ["historico", "Historico", "historico.html"],
-    ["relatorio-diario", "Relatório Diário", "relatorio_Diario.html"],
     ["fechamento-semanal", "Fechamento Semanal", "fechamento_Semanal.html"],
     ["fechamento-quinzenal", "Fechamento Quinzenal", "fechamento_Quinzenal.html"],
     ["pagamentos", "Pagamentos", "pagamentos.html"],
-    ["funcionarios", "Funcionários", "funcionarios.html"],
-    ["configuracoes", "Configurações", "configuracoes.html"]
+    ["configurações", "Configurações", "configuracoes.html"]
 ];
 
-const today = (() => {
-    const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${now.getFullYear()}-${month}-${day}`;
-})();
+const today = new Date().toISOString().slice(0, 10);
 
 function makeId() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -36,8 +29,7 @@ const seedData = {
     drivers: [],
     routes: [],
     recebimentos: [],
-    entradasGalpao: [],
-    funcionarios: []
+    entradasGalpao: []
 };
 
 function loadData() {
@@ -45,10 +37,9 @@ function loadData() {
 }
 
 function saveData(data) {
-    return window.rmsSupabase.saveState(data, state.role).then(() => true).catch((error) => {
+    window.rmsSupabase.saveState(data, state.role).catch((error) => {
         console.error("Falha ao salvar no Supabase:", error);
-        toast("ATENÇÃO: a alteração NÃO foi salva. Recarregue a página e tente novamente.", 8000);
-        return false;
+        toast("Nao foi possivel salvar no banco. Verifique a conexao.");
     });
 }
 
@@ -140,11 +131,6 @@ function addCalendarDays(value, days) {
     return `${year}-${month}-${day}`;
 }
 
-function sortedByName(list) {
-    return list.slice().sort((a, b) => String(a.nome || "")
-        .localeCompare(String(b.nome || ""), "pt-BR", { sensitivity: "base" }));
-}
-
 function getDriver(id) {
     return state.drivers.find((driver) => driver.id === id);
 }
@@ -158,13 +144,12 @@ function routeTotal(route) {
     return Math.max(0, Number(route.entregues || 0) * Number(route.valorPacote || 0) - Number(route.desconto || 0));
 }
 
-function dailyStock(date, company) {
-    const matches = (item) => company === undefined || item.empresa === company;
+function dailyStock(date) {
     const received = state.entradasGalpao
-        .filter((entry) => entry.data === date && matches(entry))
+        .filter((entry) => entry.data === date)
         .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
     const dispatched = state.routes
-        .filter((route) => route.data === date && matches(route))
+        .filter((route) => route.data === date)
         .reduce((sum, route) => sum + Number(route.saida || 0), 0);
     return { received, dispatched, available: received - dispatched };
 }
@@ -175,7 +160,7 @@ function setText(selector, value) {
     });
 }
 
-function toast(message, duration = 2800) {
+function toast(message) {
     const oldToast = document.querySelector(".toast");
     if (oldToast) oldToast.remove();
 
@@ -183,7 +168,7 @@ function toast(message, duration = 2800) {
     element.className = "toast";
     element.textContent = message;
     document.body.appendChild(element);
-    setTimeout(() => element.remove(), duration);
+    setTimeout(() => element.remove(), 2800);
 }
 
 function renderShell(page) {
@@ -196,7 +181,7 @@ function renderShell(page) {
     if (menu) {
         menu.id = "main-navigation";
         const visibleMenu = state.role === "operador"
-            ? menuItems.filter(([key]) => ["dashboard", "entregadores", "nova-saida", "fechamento"].includes(key))
+            ? menuItems.filter(([key]) => ["dashboard", "nova-saida", "fechamento"].includes(key))
             : menuItems;
         menu.innerHTML = `${visibleMenu.map(([key, label, href]) => (
             `<a href="${href}" class="${key === page ? "active" : ""}">${label}</a>`
@@ -260,7 +245,7 @@ function ensureLogged(page) {
         return false;
     }
 
-    const operatorPages = ["dashboard", "entregadores", "nova-saida", "fechamento"];
+    const operatorPages = ["dashboard", "nova-saida", "fechamento"];
     if (state.role === "operador" && !operatorPages.includes(page)) {
         window.location.replace("dashboard.html");
         return false;
@@ -311,7 +296,7 @@ function renderDashboard() {
         const statusClass = route.status === "Fechado" ? "status-fechado" : "status-aberto";
         return `
             <tr>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                <td>${driver?.nome || "Entregador removido"}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${route.entregues || 0}</td>
@@ -323,22 +308,6 @@ function renderDashboard() {
     }).join("");
 }
 
-function driverDocumentsCell(driver) {
-    const buttons = [];
-    if (driver.docIdentidade) {
-        buttons.push(`<button class="btn btn-small btn-muted" data-open-doc="${escapeHtml(driver.id)}" data-doc-kind="identidade" type="button">Identidade</button>`);
-    }
-    if (driver.docResidencia) {
-        buttons.push(`<button class="btn btn-small btn-muted" data-open-doc="${escapeHtml(driver.id)}" data-doc-kind="residencia" type="button">Residência</button>`);
-    }
-    const missing = [
-        !driver.docIdentidade && "identidade",
-        !driver.docResidencia && "residência"
-    ].filter(Boolean);
-    const pending = missing.length ? `<span class="form-help">Pendente: ${missing.join(", ")}</span>` : "";
-    return `<td class="table-actions" data-admin-only>${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
-}
-
 function renderDrivers() {
     const tbody = document.querySelector("[data-drivers-table]");
     if (!tbody) return;
@@ -346,23 +315,22 @@ function renderDrivers() {
     setText("[data-driver-count]", `${state.drivers.length} cadastrados`);
 
     if (!state.drivers.length) {
-        renderEmpty(tbody, 9, "Nenhum entregador cadastrado.");
+        renderEmpty(tbody, 8, "Nenhum entregador cadastrado.");
         return;
     }
 
-    tbody.innerHTML = sortedByName(state.drivers).map((driver) => `
+    tbody.innerHTML = state.drivers.map((driver) => `
         <tr>
             <td>${escapeHtml(driver.nome)}</td>
-            <td data-admin-only>${escapeHtml(driver.cpf || "-")}</td>
+            <td>${escapeHtml(driver.cpf || "-")}</td>
             <td>${escapeHtml(driver.telefone)}</td>
-            <td data-admin-only>${escapeHtml(driver.email || "-")}</td>
+            <td>${escapeHtml(driver.email || "-")}</td>
             <td>${escapeHtml(driver.veiculo)}</td>
-            <td data-admin-only>${driver.pixChave
+            <td>${driver.pixChave
                 ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
                 : "Sem chave cadastrada"}</td>
             <td><span class="status ${driver.status === "Ativo" ? "status-ativo" : "status-inativo"}">${driver.status}</span></td>
-            ${driverDocumentsCell(driver)}
-            <td class="table-actions" data-admin-only>
+            <td class="table-actions">
                 <button class="btn btn-small btn-secondary" data-edit-driver="${escapeHtml(driver.id)}" type="button">
                     Editar
                 </button>
@@ -376,7 +344,7 @@ function renderDrivers() {
 
 function fillDriverSelects() {
     document.querySelectorAll("[data-driver-select]").forEach((select) => {
-        const activeDrivers = sortedByName(state.drivers.filter((driver) => driver.status === "Ativo"));
+        const activeDrivers = state.drivers.filter((driver) => driver.status === "Ativo");
         select.innerHTML = activeDrivers.length
             ? activeDrivers.map((driver) => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.nome)} - ${escapeHtml(driver.veiculo)}</option>`).join("")
             : '<option value="">Cadastre um entregador ativo</option>';
@@ -418,7 +386,7 @@ function renderOpenRoutes() {
     setText("[data-open-count]", `${openRoutes.length} abertas`);
 
     if (!openRoutes.length) {
-        renderEmpty(tbody, 7, "Nenhuma saida em aberto.");
+        renderEmpty(tbody, state.role === "admin" ? 8 : 7, "Nenhuma saida em aberto.");
         return;
     }
 
@@ -427,12 +395,13 @@ function renderOpenRoutes() {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                <td>${driver?.nome || "Entregador removido"}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${escapeHtml(driver?.veiculo || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${money(route.valorPacote)}</td>
                 <td><span class="status status-aberto">Aberto</span></td>
+                ${state.role === "admin" ? `<td><button class="btn btn-secondary btn-small" type="button" data-edit-open-route="${escapeHtml(route.id)}">Editar pacotes</button></td>` : ""}
             </tr>
         `;
     }).join("");
@@ -455,7 +424,7 @@ function renderClosedRoutes() {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                <td>${driver?.nome || "Entregador removido"}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
@@ -480,7 +449,7 @@ function renderHistory(filter = "") {
     setText("[data-history-count]", `${rows.length} registros`);
 
     if (!rows.length) {
-        renderEmpty(tbody, 9, "Nenhum registro encontrado.");
+        renderEmpty(tbody, 8, "Nenhum registro encontrado.");
         return;
     }
 
@@ -490,16 +459,13 @@ function renderHistory(filter = "") {
         return `
             <tr>
                 <td>${formatDate(route.data)}</td>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                <td>${driver?.nome || "Entregador removido"}</td>
                 <td>${escapeHtml(route.empresa || "-")}</td>
                 <td>${route.saida}</td>
                 <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
                 <td>${route.retornados || 0}</td>
                 <td>${money(routeTotal(route))}</td>
-                <td><span class="status ${statusClass}">${route.status}</span>${route.edicoes?.length ? ' <span class="form-help">editada</span>' : ""}</td>
-                <td class="table-actions">${route.pagamento === "Pago"
-                    ? '<span class="form-help">Pago</span>'
-                    : `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>`}</td>
+                <td><span class="status ${statusClass}">${route.status}</span></td>
             </tr>
         `;
     }).join("");
@@ -541,7 +507,7 @@ function renderWeek() {
         const driver = getDriver(item.driverId);
         return `
             <tr>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                <td>${driver?.nome || "Entregador removido"}</td>
                 <td>${escapeHtml(item.empresa)}</td>
                 <td>${item.saidas}</td>
                 <td>${item.entregues}</td>
@@ -695,68 +661,9 @@ function renderSettings() {
     form.empresas.value = (state.settings.empresas || []).join("\n");
 }
 
-function renderCompanyStock(date) {
-    const tbody = document.querySelector("[data-company-stock-table]");
-    if (!tbody) return;
-    setText("[data-company-stock-date]", formatDate(date));
-
-    const entries = state.entradasGalpao.filter((entry) => entry.data === date);
-    const routes = state.routes.filter((route) => route.data === date);
-    const names = [...new Set([
-        ...(state.settings.empresas || []),
-        ...entries.map((entry) => entry.empresa),
-        ...routes.map((route) => route.empresa)
-    ].filter(Boolean))];
-    const rows = names.map((name) => ({ name, ...dailyStock(date, name) }));
-
-    const noCompanyReceived = entries
-        .filter((entry) => !entry.empresa)
-        .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
-    const noCompanyDispatched = routes
-        .filter((route) => !route.empresa)
-        .reduce((sum, route) => sum + Number(route.saida || 0), 0);
-    if (noCompanyReceived > 0 || noCompanyDispatched > 0) {
-        rows.push({
-            name: "Sem empresa",
-            received: noCompanyReceived,
-            dispatched: noCompanyDispatched,
-            available: noCompanyReceived - noCompanyDispatched
-        });
-    }
-
-    if (!rows.length) {
-        renderEmpty(tbody, 4, "Nenhuma empresa cadastrada. Cadastre em Configurações.");
-        return;
-    }
-
-    const total = rows.reduce((sum, row) => ({
-        received: sum.received + row.received,
-        dispatched: sum.dispatched + row.dispatched,
-        available: sum.available + row.available
-    }), { received: 0, dispatched: 0, available: 0 });
-
-    tbody.innerHTML = rows.map((row) => `
-        <tr>
-            <td>${escapeHtml(row.name)}</td>
-            <td>${row.received}</td>
-            <td>${row.dispatched}</td>
-            <td>${row.available}</td>
-        </tr>
-    `).join("") + `
-        <tr>
-            <td><strong>Total</strong></td>
-            <td><strong>${total.received}</strong></td>
-            <td><strong>${total.dispatched}</strong></td>
-            <td><strong>${total.available}</strong></td>
-        </tr>
-    `;
-}
-
 function renderWarehouse() {
     const dateInput = document.querySelector('[data-form="warehouse"]')?.elements.namedItem("data");
     const date = dateInput?.value || today;
-    renderCompanyStock(date);
-    setText("[data-stock-date]", formatDate(date));
     const stock = dailyStock(date);
     setText("[data-stock-received]", stock.received);
     setText("[data-stock-dispatched]", stock.dispatched);
@@ -766,23 +673,16 @@ function renderWarehouse() {
     if (!tbody) return;
     const entries = state.entradasGalpao.filter((entry) => entry.data === date).slice().reverse();
     if (!entries.length) {
-        renderEmpty(tbody, 5, "Nenhuma entrada registrada para esta data.");
+        renderEmpty(tbody, 3, "Nenhuma entrada registrada para esta data.");
         return;
     }
-    tbody.innerHTML = entries.map((entry) => {
-        const manual = !entry.origem && !entry.routeId;
-        return `
+    tbody.innerHTML = entries.map((entry) => `
         <tr>
-            <td>${escapeHtml(entry.empresa || "Sem empresa")}</td>
+            <td>${formatDate(entry.data)}</td>
             <td>${entry.quantidade}</td>
-            <td>${manual ? "Manual" : "Retorno de rota"}</td>
             <td>${escapeHtml(entry.observacao || "-")}</td>
-            <td class="table-actions">${manual
-                ? `<button class="btn btn-small btn-secondary" data-edit-entry="${escapeHtml(entry.id)}" type="button">Editar</button>
-                   <button class="btn btn-small btn-danger" data-delete-entry="${escapeHtml(entry.id)}" type="button">Excluir</button>`
-                : '<span class="form-help">Edite pela saída no Histórico</span>'}</td>
-        </tr>`;
-    }).join("");
+        </tr>
+    `).join("");
 }
 
 function updateRoutePrice(routeForm) {
@@ -795,24 +695,18 @@ function updateRoutePrice(routeForm) {
 
 function refreshStockForRoute(routeForm) {
     const date = routeForm.elements.namedItem("data").value;
-    const company = routeForm.elements.namedItem("empresa").value;
-    const stock = dailyStock(date, company);
+    const stock = dailyStock(date);
     const quantity = routeForm.elements.namedItem("saida");
     quantity.removeAttribute("max");
     setText("[data-route-stock]", stock.available);
 
     const warning = document.querySelector("[data-stock-warning]");
     const entryLink = document.querySelector("[data-stock-entry-link]");
-    if (!company) {
-        if (warning) warning.hidden = true;
-        if (entryLink) entryLink.hidden = true;
-        return;
-    }
     if (warning) {
         warning.hidden = stock.available > 0;
         warning.textContent = stock.received > 0
-            ? `O saldo de ${company} nesta data já foi totalmente liberado em outras saídas.`
-            : `Nenhuma entrada de pacotes foi registrada para ${company} nesta data.`;
+            ? "O saldo desta data ja foi totalmente liberado em outras saidas."
+            : "Nenhuma entrada de pacotes foi registrada para esta data.";
     }
     if (entryLink) entryLink.hidden = stock.available > 0;
 }
@@ -831,107 +725,12 @@ function updateClosurePreview(closeForm) {
     closeForm.elements.namedItem("desconto").max = route ? delivered * Number(route.valorPacote || 0) : 0;
 }
 
-const DOCUMENT_FIELDS = [
-    ["identidade", "docIdentidade", "arquivoIdentidade"],
-    ["residencia", "docResidencia", "arquivoResidencia"]
-];
-const DOCUMENT_TYPES = ["image/jpeg", "image/png", "application/pdf"];
-const DOCUMENT_MAX_BYTES = 2 * 1024 * 1024;
-const DOCUMENT_MAX_SIDE = 1600;
-
-function documentError(message) {
-    const error = new Error(message);
-    error.userMessage = message;
-    return error;
-}
-
-function loadImageFile(file) {
-    return new Promise((resolve, reject) => {
-        const url = URL.createObjectURL(file);
-        const image = new Image();
-        image.onload = () => {
-            URL.revokeObjectURL(url);
-            resolve(image);
-        };
-        image.onerror = () => {
-            URL.revokeObjectURL(url);
-            reject(documentError("Não foi possível ler a imagem. Tente outro arquivo (JPG, PNG ou PDF)."));
-        };
-        image.src = url;
-    });
-}
-
-function canvasToBlob(canvas, type, quality) {
-    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
-}
-
-async function prepareDocument(file) {
-    if (!DOCUMENT_TYPES.includes(file.type)) {
-        throw documentError("Formato não aceito. Envie PDF, JPG ou PNG.");
-    }
-    if (file.type === "application/pdf") {
-        if (file.size > DOCUMENT_MAX_BYTES) {
-            throw documentError("O PDF passa de 2 MB. Reduza o arquivo ou envie uma foto do documento.");
-        }
-        return { blob: file, type: "application/pdf", ext: "pdf" };
-    }
-
-    const image = await loadImageFile(file);
-    const scale = Math.min(1, DOCUMENT_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-    let quality = 0.8;
-    let blob = await canvasToBlob(canvas, "image/jpeg", quality);
-    while (blob && blob.size > DOCUMENT_MAX_BYTES && quality > 0.4) {
-        quality -= 0.1;
-        blob = await canvasToBlob(canvas, "image/jpeg", quality);
-    }
-    if (!blob || blob.size > DOCUMENT_MAX_BYTES) {
-        throw documentError("Não foi possível reduzir a imagem. Tente uma foto menor.");
-    }
-    return { blob, type: "image/jpeg", ext: "jpg" };
-}
-
-async function openDriverDocument(path) {
-    const target = window.open("", "_blank");
-    try {
-        const url = await window.rmsSupabase.getDriverDocumentUrl(path);
-        if (target) {
-            target.opener = null;
-            target.location.href = url;
-        } else {
-            window.location.href = url;
-        }
-    } catch (error) {
-        console.error("Falha ao abrir documento:", error);
-        if (target) target.close();
-        toast("Não foi possível abrir o documento.");
-    }
-}
-
-function updateDocumentHints(driverForm, driver) {
-    for (const [kind, field] of DOCUMENT_FIELDS) {
-        const hint = driverForm.querySelector(`[data-doc-status="${kind}"]`);
-        if (!hint) continue;
-        hint.textContent = !driver ? "" : driver[field]
-            ? "Já enviado. Escolha outro arquivo para substituir."
-            : "Nenhum arquivo enviado.";
-    }
-}
-
 function resetDriverForm(driverForm) {
     driverForm.reset();
     driverForm.elements.namedItem("driverId").value = "";
     document.querySelector("[data-driver-form-title]").textContent = "Novo entregador";
     driverForm.querySelector("[data-driver-submit]").textContent = "Cadastrar";
     driverForm.querySelector("[data-driver-cancel]").hidden = true;
-    updateDocumentHints(driverForm, null);
 }
 
 function startDriverEdit(driverForm, driver) {
@@ -949,284 +748,8 @@ function startDriverEdit(driverForm, driver) {
     document.querySelector("[data-driver-form-title]").textContent = "Editar entregador";
     driverForm.querySelector("[data-driver-submit]").textContent = "Salvar alteracoes";
     driverForm.querySelector("[data-driver-cancel]").hidden = false;
-    updateDocumentHints(driverForm, driver);
     driverForm.scrollIntoView({ behavior: "smooth", block: "start" });
     driverForm.elements.namedItem("nome").focus({ preventScroll: true });
-}
-
-function percentLabel(part, total) {
-    if (!total) return "-";
-    return `${((part / total) * 100).toFixed(1).replace(".", ",")}%`;
-}
-
-function summarizeReport(routes) {
-    const summary = { out: 0, delivered: 0, failed: 0, open: 0, openRoutes: 0 };
-    for (const route of routes) {
-        const quantity = Number(route.saida || 0);
-        summary.out += quantity;
-        if (route.status === "Fechado") {
-            const failed = Number(route.retornados || 0);
-            summary.failed += failed;
-            summary.delivered += Math.max(0, quantity - failed);
-        } else {
-            summary.open += quantity;
-            summary.openRoutes += 1;
-        }
-    }
-    return summary;
-}
-
-function groupRoutes(routes, keyOf) {
-    const groups = new Map();
-    for (const route of routes) {
-        const key = keyOf(route);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(route);
-    }
-    return groups;
-}
-
-function reportCells(summary) {
-    return `
-        <td>${summary.out}</td>
-        <td>${summary.delivered}</td>
-        <td>${summary.failed}</td>
-        <td>${percentLabel(summary.failed, summary.delivered + summary.failed)}</td>
-        <td>${summary.open}</td>`;
-}
-
-function renderDailyReport() {
-    const dateInput = document.querySelector("[data-report-date]");
-    if (!dateInput) return;
-    const date = dateInput.value || today;
-    const routes = state.routes.filter((route) => route.data === date);
-    const total = summarizeReport(routes);
-
-    setText("[data-report-title]", `Relatório diário - ${formatDate(date)}`);
-    setText('[data-report="out"]', total.out);
-    setText('[data-report="delivered"]', total.delivered);
-    setText('[data-report="failed"]', total.failed);
-    setText('[data-report="rate"]', percentLabel(total.failed, total.delivered + total.failed));
-
-    const note = document.querySelector("[data-report-note]");
-    if (note) {
-        note.hidden = total.openRoutes === 0;
-        note.textContent = `${total.openRoutes} saída(s) com ${total.open} pacote(s) ainda em aberto: entram em "Saída" e "Em aberto", mas só contam como entregues ou insucessos depois do fechamento.`;
-    }
-
-    const byName = (a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" });
-
-    const companyBody = document.querySelector("[data-report-company-table]");
-    if (companyBody) {
-        const groups = [...groupRoutes(routes, (route) => route.empresa || "Sem empresa").entries()]
-            .sort(([a], [b]) => byName(a, b));
-        if (!groups.length) {
-            renderEmpty(companyBody, 6, "Nenhuma saída registrada nesta data.");
-        } else {
-            companyBody.innerHTML = groups.map(([name, items]) => `
-                <tr>
-                    <td>${escapeHtml(name)}</td>${reportCells(summarizeReport(items))}
-                </tr>
-            `).join("");
-        }
-    }
-
-    const driverBody = document.querySelector("[data-report-driver-table]");
-    if (driverBody) {
-        const groups = [...groupRoutes(routes, (route) => route.driverId).entries()]
-            .map(([driverId, items]) => ({
-                name: getDriver(driverId)?.nome || "Entregador removido",
-                companies: [...new Set(items.map((route) => route.empresa).filter(Boolean))].join(", "),
-                items
-            }))
-            .sort((a, b) => byName(a.name, b.name));
-        if (!groups.length) {
-            renderEmpty(driverBody, 7, "Nenhuma saída registrada nesta data.");
-        } else {
-            driverBody.innerHTML = groups.map((group) => `
-                <tr>
-                    <td>${escapeHtml(group.name)}</td>
-                    <td>${escapeHtml(group.companies || "-")}</td>${reportCells(summarizeReport(group.items))}
-                </tr>
-            `).join("");
-        }
-    }
-}
-
-function renderEmployees() {
-    const tbody = document.querySelector("[data-employees-table]");
-    if (!tbody) return;
-
-    const list = sortedByName(state.funcionarios || []);
-    const active = list.filter((employee) => employee.status === "Ativo");
-    setText("[data-employee-count]", `${list.length} cadastrados`);
-    setText('[data-employee-metric="active"]', active.length);
-    setText('[data-employee-metric="payroll"]', money(active.reduce((sum, employee) => sum + Number(employee.remuneracao || 0), 0)));
-
-    if (!list.length) {
-        renderEmpty(tbody, 8, "Nenhum funcionário cadastrado.");
-        return;
-    }
-
-    tbody.innerHTML = list.map((employee) => `
-        <tr>
-            <td>${escapeHtml(employee.nome)}</td>
-            <td>${escapeHtml(employee.cpf || "-")}</td>
-            <td>${escapeHtml(employee.cargo || "-")}</td>
-            <td>${escapeHtml(employee.vinculo || "-")}</td>
-            <td>${formatDate(employee.admissao)}</td>
-            <td>${employee.remuneracao == null ? "-" : money(employee.remuneracao)}</td>
-            <td><span class="status ${employee.status === "Ativo" ? "status-ativo" : "status-inativo"}">${escapeHtml(employee.status)}</span></td>
-            <td class="table-actions">
-                <button class="btn btn-small btn-secondary" data-edit-employee="${escapeHtml(employee.id)}" type="button">Editar</button>
-                <button class="btn btn-small btn-muted" data-toggle-employee="${escapeHtml(employee.id)}" type="button">
-                    ${employee.status === "Ativo" ? "Inativar" : "Ativar"}
-                </button>
-            </td>
-        </tr>
-    `).join("");
-}
-
-function resetEmployeeForm(employeeForm) {
-    employeeForm.reset();
-    employeeForm.elements.namedItem("employeeId").value = "";
-    document.querySelector("[data-employee-form-title]").textContent = "Novo funcionário";
-    employeeForm.querySelector("[data-employee-submit]").textContent = "Cadastrar";
-    employeeForm.querySelector("[data-employee-cancel]").hidden = true;
-}
-
-function startEmployeeEdit(employeeForm, employee) {
-    employeeForm.elements.namedItem("employeeId").value = employee.id;
-    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "endereco", "observacao"]) {
-        employeeForm.elements.namedItem(field).value = employee[field] || "";
-    }
-    employeeForm.elements.namedItem("remuneracao").value = employee.remuneracao == null ? "" : employee.remuneracao;
-    employeeForm.elements.namedItem("status").value = employee.status || "Ativo";
-    document.querySelector("[data-employee-form-title]").textContent = "Editar funcionário";
-    employeeForm.querySelector("[data-employee-submit]").textContent = "Salvar alterações";
-    employeeForm.querySelector("[data-employee-cancel]").hidden = false;
-    employeeForm.scrollIntoView({ behavior: "smooth", block: "start" });
-    employeeForm.elements.namedItem("nome").focus({ preventScroll: true });
-}
-
-function resetEntryForm(form) {
-    const keepDate = form.elements.namedItem("data").value || today;
-    form.reset();
-    form.elements.namedItem("data").value = keepDate;
-    form.elements.namedItem("entryId").value = "";
-    form.querySelector("[data-entry-submit]").textContent = "Registrar entrada";
-    form.querySelector("[data-entry-cancel]").hidden = true;
-    setText("[data-entry-title]", "Entrada de pacotes");
-}
-
-function startEntryEdit(entry) {
-    const form = document.querySelector('[data-form="warehouse"]');
-    if (!form) return;
-    form.elements.namedItem("entryId").value = entry.id;
-    form.elements.namedItem("data").value = entry.data;
-    const select = form.elements.namedItem("empresa");
-    if (entry.empresa && ![...select.options].some((option) => option.value === entry.empresa)) {
-        select.add(new Option(entry.empresa, entry.empresa));
-    }
-    select.value = entry.empresa || "";
-    form.elements.namedItem("quantidade").value = entry.quantidade;
-    form.querySelector("[data-entry-submit]").textContent = "Salvar alteração";
-    form.querySelector("[data-entry-cancel]").hidden = false;
-    setText("[data-entry-title]", "Editar entrada de pacotes");
-    renderWarehouse();
-    form.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-async function saveEntryEdit(form, data) {
-    const changes = {
-        data: data.data,
-        empresa: String(data.empresa || "").trim(),
-        quantidade: Number(data.quantidade)
-    };
-    if (!Number.isInteger(changes.quantidade) || changes.quantidade < 1) {
-        toast("Informe uma quantidade de pacotes válida.");
-        return;
-    }
-    const submitButton = form.querySelector("[data-entry-submit]");
-    submitButton.disabled = true;
-    try {
-        const updated = await window.rmsSupabase.updateWarehouseEntry(data.entryId, changes);
-        const index = state.entradasGalpao.findIndex((entry) => entry.id === updated.id);
-        if (index >= 0) state.entradasGalpao[index] = updated;
-        resetEntryForm(form);
-        renderWarehouse();
-        toast("Entrada atualizada.");
-    } catch (error) {
-        console.error("Falha ao editar entrada:", error);
-        toast(error.code === "P0001"
-            ? error.message
-            : "Não foi possível salvar a alteração. Tente novamente.", 6000);
-    } finally {
-        submitButton.disabled = false;
-    }
-}
-
-async function removeWarehouseEntry(entryId) {
-    try {
-        await window.rmsSupabase.deleteWarehouseEntry(entryId);
-        state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== entryId);
-        const form = document.querySelector('[data-form="warehouse"]');
-        if (form && form.elements.namedItem("entryId").value === entryId) resetEntryForm(form);
-        renderWarehouse();
-        toast("Entrada excluída.");
-    } catch (error) {
-        console.error("Falha ao excluir entrada:", error);
-        toast(error.code === "P0001"
-            ? error.message
-            : "Não foi possível excluir a entrada. Tente novamente.", 6000);
-    }
-}
-
-function closeRouteEdit() {
-    const panel = document.querySelector("[data-route-edit-panel]");
-    const form = document.querySelector('[data-form="route-edit"]');
-    if (form) form.reset();
-    if (panel) panel.hidden = true;
-}
-
-function startRouteEdit(route) {
-    const panel = document.querySelector("[data-route-edit-panel]");
-    const form = document.querySelector('[data-form="route-edit"]');
-    if (!panel || !form) return;
-
-    form.elements.namedItem("routeId").value = route.id;
-    form.elements.namedItem("data").value = route.data || "";
-
-    const driverSelect = form.elements.namedItem("driverId");
-    const drivers = sortedByName(state.drivers.filter((driver) => driver.status === "Ativo" || driver.id === route.driverId));
-    driverSelect.innerHTML = drivers.map((driver) => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.nome)} - ${escapeHtml(driver.veiculo)}</option>`).join("");
-    driverSelect.value = route.driverId;
-
-    const companySelect = form.elements.namedItem("empresa");
-    const companies = [...new Set([...(state.settings.empresas || []), route.empresa].filter(Boolean))];
-    companySelect.innerHTML = companies.map((company) => `<option value="${escapeHtml(company)}">${escapeHtml(company)}</option>`).join("");
-    companySelect.value = route.empresa || "";
-
-    form.elements.namedItem("saida").value = route.saida;
-    form.elements.namedItem("observacao").value = route.observacao || "";
-
-    const closed = route.status === "Fechado";
-    form.querySelectorAll("[data-route-edit-closed]").forEach((element) => {
-        element.style.display = closed ? "" : "none";
-    });
-    form.elements.namedItem("retornados").value = closed ? (route.retornados || 0) : "";
-    form.elements.namedItem("desconto").value = closed ? (route.desconto || 0) : "";
-    form.elements.namedItem("retornados").required = closed;
-
-    setText("[data-route-edit-title]", `Editar saída de ${formatDate(route.data)}`);
-    const edits = route.edicoes || [];
-    const last = edits[edits.length - 1];
-    setText("[data-route-edit-info]", last
-        ? `Editada ${edits.length} vez(es). Última edição em ${formatDate(String(last.em).slice(0, 10))} por ${last.por}.`
-        : "");
-
-    panel.hidden = false;
-    panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function setupForms() {
@@ -1262,128 +785,11 @@ function setupForms() {
         });
     }
 
-    const reportDate = document.querySelector("[data-report-date]");
-    if (reportDate) {
-        reportDate.value = today;
-        reportDate.addEventListener("change", renderDailyReport);
-    }
-    const printReport = document.querySelector("[data-print-report]");
-    if (printReport) printReport.addEventListener("click", () => window.print());
-
-    const employeeForm = document.querySelector('[data-form="employee"]');
-    if (employeeForm) {
-        employeeForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const data = Object.fromEntries(new FormData(employeeForm));
-            const employeeId = data.employeeId;
-            delete data.employeeId;
-            for (const key of Object.keys(data)) {
-                if (typeof data[key] === "string") data[key] = data[key].trim();
-            }
-            if (validatePixKey("cpf", data.cpf)) {
-                toast("Informe um CPF válido.");
-                employeeForm.elements.namedItem("cpf").focus();
-                return;
-            }
-            const cpfDigits = data.cpf.replace(/\D/g, "");
-            const duplicate = state.funcionarios.find((employee) => employee.id !== employeeId
-                && String(employee.cpf || "").replace(/\D/g, "") === cpfDigits);
-            if (duplicate) {
-                toast("Já existe um funcionário com este CPF.");
-                return;
-            }
-            data.remuneracao = data.remuneracao === "" ? null : Number(data.remuneracao);
-
-            const existing = state.funcionarios.find((employee) => employee.id === employeeId);
-            if (employeeId && !existing) {
-                toast("Funcionário não encontrado.");
-                resetEmployeeForm(employeeForm);
-                return;
-            }
-            if (existing) {
-                Object.assign(existing, data);
-            } else {
-                state.funcionarios.push({ id: makeId(), ...data });
-            }
-            const saved = await saveData(state);
-            resetEmployeeForm(employeeForm);
-            renderEmployees();
-            if (saved) toast(existing ? "Cadastro atualizado." : "Funcionário cadastrado.");
-        });
-    }
-
-    const routeEditForm = document.querySelector('[data-form="route-edit"]');
-    if (routeEditForm) {
-        routeEditForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const data = Object.fromEntries(new FormData(routeEditForm));
-            const route = state.routes.find((item) => item.id === data.routeId);
-            if (!route) {
-                toast("Saída não encontrada.");
-                closeRouteEdit();
-                return;
-            }
-
-            const closed = route.status === "Fechado";
-            const changes = {
-                data: data.data,
-                driverId: data.driverId,
-                empresa: String(data.empresa || "").trim(),
-                saida: Number(data.saida),
-                observacao: String(data.observacao || "").trim()
-            };
-            if (!Number.isInteger(changes.saida) || changes.saida < 1) {
-                toast("Informe uma quantidade de pacotes válida.");
-                return;
-            }
-            if (closed) {
-                changes.retornados = Number(data.retornados || 0);
-                changes.desconto = Number(data.desconto || 0);
-                if (!Number.isInteger(changes.retornados) || changes.retornados < 0 || changes.retornados > changes.saida) {
-                    toast("Os pacotes retornados devem ser um número entre 0 e o total da saída.");
-                    return;
-                }
-                if (!(changes.desconto >= 0)) {
-                    toast("O desconto não pode ser negativo.");
-                    return;
-                }
-            }
-
-            const submitButton = routeEditForm.querySelector('[type="submit"]');
-            submitButton.disabled = true;
-            try {
-                const result = await window.rmsSupabase.updateRoute(route.id, changes);
-                const index = state.routes.findIndex((item) => item.id === route.id);
-                state.routes[index] = result.route;
-                if (result.removed_entry_id) {
-                    state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== result.removed_entry_id);
-                }
-                if (result.warehouse_entry) {
-                    const entryIndex = state.entradasGalpao.findIndex((entry) => entry.id === result.warehouse_entry.id);
-                    if (entryIndex >= 0) state.entradasGalpao[entryIndex] = result.warehouse_entry;
-                    else state.entradasGalpao.push(result.warehouse_entry);
-                }
-                closeRouteEdit();
-                renderHistory(document.querySelector("[data-search-history]")?.value || "");
-                toast("Saída atualizada.");
-            } catch (error) {
-                console.error("Falha ao editar saída:", error);
-                toast(error.code === "P0001"
-                    ? error.message
-                    : "Não foi possível salvar a alteração. Confira os dados e tente novamente.", 6000);
-            } finally {
-                submitButton.disabled = false;
-            }
-        });
-    }
-
     const driverForm = document.querySelector('[data-form="driver"]');
     if (driverForm) {
-        driverForm.addEventListener("submit", async (event) => {
+        driverForm.addEventListener("submit", (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(driverForm));
-            delete data.arquivoIdentidade;
-            delete data.arquivoResidencia;
             data.pixChave = data.pixChave.trim();
             const pixError = validatePixKey(data.pixTipo, data.pixChave);
             if (pixError) {
@@ -1402,58 +808,16 @@ function setupForms() {
                 return;
             }
 
-            const submitButton = driverForm.querySelector("[data-driver-submit]");
-            if (state.role === "operador" && driverId) {
-                toast("Operadores só podem cadastrar novos entregadores.");
-                resetDriverForm(driverForm);
-                return;
+            if (existingDriver) {
+                Object.assign(existingDriver, data);
+            } else {
+                state.drivers.push({ id: makeId(), ...data });
             }
-
-            const targetId = existingDriver ? existingDriver.id : makeId();
-            const documentPaths = {};
-            const replacedPaths = [];
-            submitButton.disabled = true;
-            try {
-                for (const [kind, field, inputName] of DOCUMENT_FIELDS) {
-                    const file = driverForm.elements.namedItem(inputName).files[0];
-                    if (!file) continue;
-                    const prepared = await prepareDocument(file);
-                    documentPaths[field] = await window.rmsSupabase.uploadDriverDocument(targetId, kind, prepared);
-                    if (existingDriver && existingDriver[field]) replacedPaths.push(existingDriver[field]);
-                }
-            } catch (error) {
-                console.error("Falha ao enviar documento:", error);
-                toast(error.userMessage || "Não foi possível enviar os documentos. Tente novamente.");
-                submitButton.disabled = false;
-                return;
-            }
-
-            let succeeded = true;
-            try {
-                if (state.role === "operador") {
-                    const savedDriver = await window.rmsSupabase.registerDriver({ id: targetId, ...data, ...documentPaths });
-                    state.drivers.push(savedDriver);
-                } else if (existingDriver) {
-                    Object.assign(existingDriver, data, documentPaths);
-                    succeeded = await saveData(state);
-                    if (succeeded && replacedPaths.length) {
-                        window.rmsSupabase.removeDriverDocuments(replacedPaths)
-                            .catch((error) => console.error("Falha ao remover documento antigo:", error));
-                    }
-                } else {
-                    state.drivers.push({ id: targetId, ...data, ...documentPaths });
-                    succeeded = await saveData(state);
-                }
-                resetDriverForm(driverForm);
-                renderDrivers();
-                fillDriverSelects();
-                if (succeeded) toast(existingDriver ? "Cadastro atualizado." : "Entregador cadastrado.");
-            } catch (error) {
-                console.error("Falha ao cadastrar entregador:", error);
-                toast("Não foi possível cadastrar o entregador. Confira os dados e tente novamente.");
-            } finally {
-                submitButton.disabled = false;
-            }
+            saveData(state);
+            resetDriverForm(driverForm);
+            renderDrivers();
+            fillDriverSelects();
+            toast(existingDriver ? "Cadastro atualizado." : "Entregador cadastrado.");
         });
     }
 
@@ -1497,7 +861,7 @@ function setupForms() {
                 toast("Saida registrada.");
             } catch (error) {
                 console.error("Falha ao registrar saida:", error);
-                toast(error.message?.includes("Estoque insuficiente") || error.message?.includes("Empresa nao cadastrada")
+                toast(error.message?.includes("Estoque insuficiente")
                     ? error.message
                     : "Nao foi possivel registrar a saida. Confira os dados e tente novamente.");
             } finally {
@@ -1506,7 +870,6 @@ function setupForms() {
         });
         routeForm.elements.namedItem("driverId").addEventListener("change", () => updateRoutePrice(routeForm));
         routeForm.elements.namedItem("data").addEventListener("change", () => refreshStockForRoute(routeForm));
-        routeForm.elements.namedItem("empresa").addEventListener("change", () => refreshStockForRoute(routeForm));
     }
 
     const closeForm = document.querySelector('[data-form="close-route"]');
@@ -1556,19 +919,13 @@ function setupForms() {
     const warehouseForm = document.querySelector('[data-form="warehouse"]');
     if (warehouseForm) {
         warehouseForm.elements.namedItem("data").value = today;
-        warehouseForm.elements.namedItem("data").max = today;
         warehouseForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(warehouseForm));
-            if (data.entryId) {
-                await saveEntryEdit(warehouseForm, data);
-                return;
-            }
             const entry = {
                 id: makeId(),
                 data: data.data,
                 quantidade: Number(data.quantidade),
-                empresa: String(data.empresa || "").trim(),
                 observacao: String(data.observacao || "").trim()
             };
             const submitButton = warehouseForm.querySelector('[type="submit"]');
@@ -1577,7 +934,7 @@ function setupForms() {
                 const savedEntry = await window.rmsSupabase.registerWarehouseEntry(entry);
                 state.entradasGalpao.push(savedEntry);
                 warehouseForm.reset();
-                warehouseForm.elements.namedItem("data").value = entry.data;
+                warehouseForm.elements.namedItem("data").value = today;
                 renderWarehouse();
                 toast("Entrada de pacotes registrada.");
             } catch (error) {
@@ -1596,7 +953,6 @@ function setupForms() {
             event.preventDefault();
             const data = Object.fromEntries(new FormData(settingsForm));
             state.settings = {
-                ...state.settings,
                 empresa: data.empresa,
                 operador: data.operador,
                 valorPacote: Number(data.valorMoto),
@@ -1647,6 +1003,33 @@ function setupForms() {
 
 function setupActions() {
     document.addEventListener("click", (event) => {
+        const editRouteButton = event.target.closest("[data-edit-open-route]");
+        if (editRouteButton) {
+            if (state.role !== "admin") return;
+            const route = state.routes.find((item) => item.id === editRouteButton.dataset.editOpenRoute);
+            if (!route || route.status !== "Aberto") return;
+            const value = window.prompt(`Quantidade de pacotes para ${formatDate(route.data)} (atual: ${route.saida}):`, String(route.saida));
+            if (value === null) return;
+            const quantity = Number(value);
+            if (!Number.isInteger(quantity) || quantity < 1) {
+                toast("Informe uma quantidade inteira maior que zero.");
+                return;
+            }
+            editRouteButton.disabled = true;
+            window.rmsSupabase.updateOpenRouteQuantity(route.id, quantity).then((updatedRoute) => {
+                Object.assign(route, updatedRoute);
+                renderOpenRoutes();
+                renderDashboard();
+                renderWarehouse();
+                toast("Quantidade da saida atualizada.");
+            }).catch((error) => {
+                console.error("Falha ao editar saida:", error);
+                toast(error.message || "Nao foi possivel atualizar a saida.");
+                editRouteButton.disabled = false;
+            });
+            return;
+        }
+
         if (event.target.closest("[data-logout]")) {
             window.rmsSupabase.signOut();
             window.location.href = "index.html";
@@ -1675,13 +1058,6 @@ function setupActions() {
             if (driver && driverForm) startDriverEdit(driverForm, driver);
         }
 
-        const openDocButton = event.target.closest("[data-open-doc]");
-        if (openDocButton) {
-            const driver = getDriver(openDocButton.dataset.openDoc);
-            const field = openDocButton.dataset.docKind === "identidade" ? "docIdentidade" : "docResidencia";
-            if (driver && driver[field]) openDriverDocument(driver[field]);
-        }
-
         const cancelDriverButton = event.target.closest("[data-driver-cancel]");
         if (cancelDriverButton) {
             const driverForm = document.querySelector('[data-form="driver"]');
@@ -1695,56 +1071,6 @@ function setupActions() {
                 driver.status = driver.status === "Ativo" ? "Inativo" : "Ativo";
                 saveData(state);
                 renderDrivers();
-                toast("Status atualizado.");
-            }
-        }
-
-        const editEntryButton = event.target.closest("[data-edit-entry]");
-        if (editEntryButton) {
-            const entry = state.entradasGalpao.find((item) => item.id === editEntryButton.dataset.editEntry);
-            if (entry) startEntryEdit(entry);
-        }
-
-        if (event.target.closest("[data-entry-cancel]")) {
-            const entryForm = document.querySelector('[data-form="warehouse"]');
-            if (entryForm) resetEntryForm(entryForm);
-        }
-
-        const deleteEntryButton = event.target.closest("[data-delete-entry]");
-        if (deleteEntryButton) {
-            const entry = state.entradasGalpao.find((item) => item.id === deleteEntryButton.dataset.deleteEntry);
-            if (entry && window.confirm(`Excluir a entrada de ${entry.quantidade} pacote(s) de ${entry.empresa || "empresa não informada"} em ${formatDate(entry.data)}? Esta ação não pode ser desfeita.`)) {
-                removeWarehouseEntry(entry.id);
-            }
-        }
-
-        const editRouteButton = event.target.closest("[data-edit-route]");
-        if (editRouteButton) {
-            const route = state.routes.find((item) => item.id === editRouteButton.dataset.editRoute);
-            if (route) startRouteEdit(route);
-        }
-
-        if (event.target.closest("[data-route-edit-cancel]")) closeRouteEdit();
-
-        const editEmployeeButton = event.target.closest("[data-edit-employee]");
-        if (editEmployeeButton) {
-            const employee = state.funcionarios.find((item) => item.id === editEmployeeButton.dataset.editEmployee);
-            const employeeForm = document.querySelector('[data-form="employee"]');
-            if (employee && employeeForm) startEmployeeEdit(employeeForm, employee);
-        }
-
-        if (event.target.closest("[data-employee-cancel]")) {
-            const employeeForm = document.querySelector('[data-form="employee"]');
-            if (employeeForm) resetEmployeeForm(employeeForm);
-        }
-
-        const toggleEmployeeButton = event.target.closest("[data-toggle-employee]");
-        if (toggleEmployeeButton) {
-            const employee = state.funcionarios.find((item) => item.id === toggleEmployeeButton.dataset.toggleEmployee);
-            if (employee) {
-                employee.status = employee.status === "Ativo" ? "Inativo" : "Ativo";
-                saveData(state);
-                renderEmployees();
                 toast("Status atualizado.");
             }
         }
@@ -1867,8 +1193,6 @@ function renderPage() {
     renderFortnight();
     renderSettings();
     renderWarehouse();
-    renderDailyReport();
-    renderEmployees();
     const routeForm = document.querySelector('[data-form="route"]');
     if (routeForm) updateRoutePrice(routeForm);
     const closeForm = document.querySelector('[data-form="close-route"]');
