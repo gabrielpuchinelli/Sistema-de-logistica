@@ -673,16 +673,41 @@ function renderWarehouse() {
     if (!tbody) return;
     const entries = state.entradasGalpao.filter((entry) => entry.data === date).slice().reverse();
     if (!entries.length) {
-        renderEmpty(tbody, 3, "Nenhuma entrada registrada para esta data.");
-        return;
-    }
-    tbody.innerHTML = entries.map((entry) => `
+        renderEmpty(tbody, 5, "Nenhuma entrada registrada para esta data.");
+    } else tbody.innerHTML = entries.map((entry) => {
+        const source = entry.routeId || entry.origem === "rota" || entry.origem === "retorno_rota"
+            ? "Retorno de rota" : "Entrada manual";
+        return `
         <tr>
+            <td>${escapeHtml(entry.empresa || "Sem empresa")}</td>
             <td>${formatDate(entry.data)}</td>
             <td>${entry.quantidade}</td>
+            <td>${source}</td>
             <td>${escapeHtml(entry.observacao || "-")}</td>
         </tr>
-    `).join("");
+    `;
+    }).join("");
+
+    const companyTable = document.querySelector("[data-company-stock-table]");
+    if (!companyTable) return;
+    const routes = state.routes.filter((route) => route.data === date);
+    const companyKey = (name) => String(name || "").trim().toLocaleLowerCase("pt-BR");
+    const companies = new Map();
+    [...(state.settings.empresas || []), ...entries.map((entry) => entry.empresa), ...routes.map((route) => route.empresa)]
+        .filter(Boolean).forEach((name) => {
+            const clean = String(name).trim();
+            if (clean) companies.set(companyKey(clean), clean);
+        });
+    const rows = [...companies.values()].map((name) => {
+        const received = entries.filter((entry) => companyKey(entry.empresa) === companyKey(name))
+            .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
+        const dispatched = routes.filter((route) => companyKey(route.empresa) === companyKey(name))
+            .reduce((sum, route) => sum + Number(route.saida || 0), 0);
+        return { name, received, dispatched, balance: received - dispatched };
+    });
+    companyTable.innerHTML = rows.length
+        ? rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.received}</td><td>${row.dispatched}</td><td>${row.balance}</td></tr>`).join("")
+        : '<tr><td class="empty-row" colspan="4">Nenhum pacote registrado nesta data.</td></tr>';
 }
 
 function updateRoutePrice(routeForm) {
@@ -925,6 +950,7 @@ function setupForms() {
             const entry = {
                 id: makeId(),
                 data: data.data,
+                empresa: String(data.empresa || "").trim(),
                 quantidade: Number(data.quantidade),
                 observacao: String(data.observacao || "").trim()
             };
