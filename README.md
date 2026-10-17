@@ -68,10 +68,6 @@ O administrador possui acesso completo ao sistema, incluindo:
 
 ## Estrutura do banco de dados
 
-### Atualizar o banco
-
-Para habilitar a edição da quantidade de uma saída aberta por administradores, aplique no projeto Supabase o script `supabase/migrations/202610160001_admin_update_open_route_quantity.sql` pelo SQL Editor. Depois publique os arquivos da aplicação atualizados. A função só permite editar rotas abertas e verifica o saldo de pacotes disponível na data da rota.
-
 O sistema utiliza o Supabase como plataforma de banco de dados e backend.
 
 Principais estruturas utilizadas:
@@ -80,7 +76,7 @@ Principais estruturas utilizadas:
 | ------------------- | ---------------------------------------------------------- |
 | `profiles`          | Dados e informações dos usuários do sistema                |
 | `driver_private`    | Informações privadas dos entregadores                      |
-| `driver_public`     | Informações públicas utilizadas pela operação              |
+| `drivers`           | Informações públicas utilizadas pela operação              |
 | `warehouse_entries` | Registros relacionados à entrada e movimentação de pacotes |
 | `routes`            | Informações relacionadas às rotas dos entregadores         |
 | `receipts`          | Registros relacionados aos fechamentos e recebimentos      |
@@ -130,13 +126,11 @@ O projeto utiliza uma aplicação web integrada ao Supabase.
 └──────────────────────────────┘
 ```
 
-## Multiempresa
+## Empresas e clientes
 
-O sistema foi planejado para possibilitar a utilização por diferentes empresas ou operações logísticas.
+O campo "Empresas para as rotas", em Configurações, é a lista de empresas despachantes de uma mesma operação. Cada saída e cada entrada de pacotes é vinculada a uma dessas empresas, e o estoque do galpão é controlado por empresa.
 
-Cada empresa poderá utilizar sua própria estrutura operacional, mantendo seus entregadores, rotas, movimentações e registros financeiros separados dos demais clientes.
-
-Essa arquitetura permite que o sistema seja utilizado como uma solução SaaS, possibilitando a disponibilização da plataforma para diferentes empresas sem a necessidade de criar uma aplicação completamente independente para cada cliente.
+Para atender clientes diferentes, a recomendação é usar um projeto Supabase separado por cliente, com o mesmo código. O sistema não separa clientes diferentes dentro do mesmo banco de dados.
 
 ## Segurança
 
@@ -146,6 +140,10 @@ Informações sensíveis não devem ser armazenadas diretamente no código-fonte
 
 As credenciais e configurações privadas do Supabase devem ser mantidas em ambiente seguro.
 
+* O cadastro público do Supabase Auth deve ficar desligado. Novos usuários recebem o papel `operador` por padrão (trigger `create_profile_for_user`).
+* A chave `anon` é pública por natureza. As políticas RLS são a proteção real dos dados.
+* A chave `service_role` nunca deve ir ao front-end nem ao repositório.
+
 > Nunca publique chaves privadas, tokens, senhas ou outras credenciais no GitHub.
 
 ## Como executar o projeto
@@ -153,13 +151,13 @@ As credenciais e configurações privadas do Supabase devem ser mantidas em ambi
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/gabrielpuchinelli/NOME-DO-REPOSITORIO.git
+git clone https://github.com/gabrielpuchinelli/Sistema-de-logistica.git
 ```
 
 ### 2. Acesse a pasta
 
 ```bash
-cd NOME-DO-REPOSITORIO
+cd Sistema-de-logistica
 ```
 
 ### 3. Configure o Supabase
