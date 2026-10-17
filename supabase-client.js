@@ -11,13 +11,14 @@
         entradasGalpao: "warehouse_entries",
         recebimentos: "receipts"
     };
+    const DOCS_BUCKET = "driver-docs";
     let settingsSnapshot = null;
     const recordSnapshots = {};
     const privateDriverSnapshots = new Map();
     let writeQueue = Promise.resolve();
 
     function publicDriver(record) {
-        const { cpf, cnh, endereco, email, pixTipo, pixChave, ...publicData } = record;
+        const { cpf, cnh, endereco, email, pixTipo, pixChave, docIdentidade, docResidencia, ...publicData } = record;
         return publicData;
     }
 
@@ -67,6 +68,15 @@
                 ...(privateById.get(driver.id) || {})
             }));
         }
+        loaded.funcionarios = [];
+        if (defaults.role === "admin") {
+            const { data, error } = await client.from("employees").select("payload");
+            if (error) console.error("Falha ao carregar funcionarios:", error);
+            else loaded.funcionarios = (data || []).map((row) => row.payload);
+        }
+        recordSnapshots.funcionarios = new Map(
+            loaded.funcionarios.map((record) => [record.id, JSON.stringify(record)])
+        );
         settingsSnapshot = JSON.stringify(loaded.settings);
         return { ...defaults, ...loaded };
     }
@@ -97,7 +107,9 @@
                             endereco: record.endereco || "",
                             email: record.email || "",
                             pixTipo: record.pixTipo || "",
-                            pixChave: record.pixChave || ""
+                            pixChave: record.pixChave || "",
+                            docIdentidade: record.docIdentidade || "",
+                            docResidencia: record.docResidencia || ""
                         }
                     })).filter((row) => privateDriverSnapshots.get(row.id) !== JSON.stringify(row.payload));
                     if (privateRows.length) {
@@ -105,6 +117,17 @@
                         if (error) throw error;
                         for (const row of privateRows) privateDriverSnapshots.set(row.id, JSON.stringify(row.payload));
                     }
+                }
+            }
+
+            if (role === "admin") {
+                const employeeRows = (state.funcionarios || [])
+                    .map((record) => ({ id: record.id, payload: record }))
+                    .filter((row) => recordSnapshots.funcionarios.get(row.id) !== JSON.stringify(row.payload));
+                if (employeeRows.length) {
+                    const { error } = await client.from("employees").upsert(employeeRows, { onConflict: "id" });
+                    if (error) throw error;
+                    for (const row of employeeRows) recordSnapshots.funcionarios.set(row.id, JSON.stringify(row.payload));
                 }
             }
 
@@ -145,14 +168,76 @@
         return data;
     }
 
-    async function updateOpenRouteQuantity(routeId, quantity) {
-        const { data, error } = await client.rpc("admin_update_open_route_quantity", {
-            p_route_id: routeId,
-            p_quantity: quantity
+    async function updateWarehouseEntry(entryId, changes) {
+        const { data, error } = await client.rpc("update_warehouse_entry", {
+            p_entry_id: entryId,
+            p_changes: changes
         });
         if (error) throw error;
-        recordSnapshots.routes.set(data.id, JSON.stringify(data));
+        recordSnapshots.entradasGalpao.set(data.entry.id, JSON.stringify(data.entry));
+        return data.entry;
+    }
+
+    async function deleteWarehouseEntry(entryId) {
+        const { error } = await client.rpc("delete_warehouse_entry", { p_entry_id: entryId });
+        if (error) throw error;
+        recordSnapshots.entradasGalpao.delete(entryId);
+    }
+
+    async function updateRoute(routeId, changes) {
+        const { data, error } = await client.rpc("update_route", {
+            p_route_id: routeId,
+            p_changes: changes
+        });
+        if (error) throw error;
+        recordSnapshots.routes.set(data.route.id, JSON.stringify(data.route));
+        if (data.removed_entry_id) recordSnapshots.entradasGalpao.delete(data.removed_entry_id);
+        if (data.warehouse_entry) {
+            recordSnapshots.entradasGalpao.set(data.warehouse_entry.id, JSON.stringify(data.warehouse_entry));
+        }
         return data;
+    }
+
+    async function registerDriver(record) {
+        const publicData = publicDriver(record);
+        const { data, error } = await client.rpc("register_driver", {
+            p_driver: publicData,
+            p_private: {
+                cpf: record.cpf || "",
+                cnh: record.cnh || "",
+                endereco: record.endereco || "",
+                email: record.email || "",
+                pixTipo: record.pixTipo || "",
+                pixChave: record.pixChave || "",
+                docIdentidade: record.docIdentidade || "",
+                docResidencia: record.docResidencia || ""
+            }
+        });
+        if (error) throw error;
+        recordSnapshots.drivers.set(data.id, JSON.stringify(data));
+        return data;
+    }
+
+    async function uploadDriverDocument(driverId, kind, prepared) {
+        const path = `${driverId}/${kind}-${Date.now()}.${prepared.ext}`;
+        const { error } = await client.storage
+            .from(DOCS_BUCKET)
+            .upload(path, prepared.blob, { contentType: prepared.type, upsert: false });
+        if (error) throw error;
+        return path;
+    }
+
+    async function getDriverDocumentUrl(path) {
+        const { data, error } = await client.storage.from(DOCS_BUCKET).createSignedUrl(path, 60);
+        if (error) throw error;
+        return data.signedUrl;
+    }
+
+    async function removeDriverDocuments(paths) {
+        const list = paths.filter(Boolean);
+        if (!list.length) return;
+        const { error } = await client.storage.from(DOCS_BUCKET).remove(list);
+        if (error) throw error;
     }
 
     async function registerWarehouseEntry(entry) {
@@ -179,7 +264,13 @@
         saveState,
         createRoute,
         closeRoute,
-        updateOpenRouteQuantity,
+        updateRoute,
+        updateWarehouseEntry,
+        deleteWarehouseEntry,
+        registerDriver,
+        uploadDriverDocument,
+        getDriverDocumentUrl,
+        removeDriverDocuments,
         registerWarehouseEntry,
         clearBusinessData
     };
