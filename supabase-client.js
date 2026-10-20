@@ -198,6 +198,12 @@
         return data;
     }
 
+    async function deleteRoute(routeId) {
+        const { error } = await client.from(tables.routes).delete().eq("id", routeId);
+        if (error) throw error;
+        recordSnapshots.routes.delete(routeId);
+    }
+
     async function registerDriver(record) {
         const publicData = publicDriver(record);
         const { data, error } = await client.rpc("register_driver", {
@@ -265,6 +271,7 @@
         createRoute,
         closeRoute,
         updateRoute,
+        deleteRoute,
         updateWarehouseEntry,
         deleteWarehouseEntry,
         registerDriver,

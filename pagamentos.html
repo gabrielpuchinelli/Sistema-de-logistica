@@ -39,9 +39,17 @@
                 <h2>Fechamentos para pagamento</h2>
                 <span data-payment-count>0 itens</span>
             </div>
+            <section class="filters">
+                <label>De<input type="date" data-payment-start></label>
+                <label>Até<input type="date" data-payment-end></label>
+                <label class="checkbox-label"><input type="checkbox" data-payment-select-all> Selecionar todos</label>
+                <label>Status em lote<select data-payment-bulk-status><option value="Pago">Marcar pago</option><option value="Pendente">Marcar pendente</option></select></label>
+                <button class="btn btn-primary" data-payment-bulk-apply type="button">Aplicar aos selecionados</button>
+            </section>
             <table>
                 <thead>
                     <tr>
+                        <th>Selecionar</th>
                         <th>Data</th>
                         <th>Entregador</th>
                         <th>Chave Pix</th>

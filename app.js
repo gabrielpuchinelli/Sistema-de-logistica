@@ -475,7 +475,18 @@ function renderHistory(filter = "") {
         const driver = getDriver(route.driverId);
         const text = `${driver?.nome || ""} ${route.empresa || ""} ${route.data} ${route.status}`.toLowerCase();
         return text.includes(term);
-    }).slice().reverse();
+    });
+    const sort = document.querySelector("[data-sort-history]")?.value || "recent";
+    rows.sort((a, b) => {
+        const nameA = getDriver(a.driverId)?.nome || "";
+        const nameB = getDriver(b.driverId)?.nome || "";
+        if (sort === "oldest") return a.data.localeCompare(b.data);
+        if (sort === "name-asc") return nameA.localeCompare(nameB, "pt-BR", { sensitivity: "base" });
+        if (sort === "name-desc") return nameB.localeCompare(nameA, "pt-BR", { sensitivity: "base" });
+        if (sort === "value-desc") return routeTotal(b) - routeTotal(a);
+        if (sort === "value-asc") return routeTotal(a) - routeTotal(b);
+        return b.data.localeCompare(a.data);
+    });
 
     setText("[data-history-count]", `${rows.length} registros`);
 
@@ -497,9 +508,8 @@ function renderHistory(filter = "") {
                 <td>${route.retornados || 0}</td>
                 <td>${money(routeTotal(route))}</td>
                 <td><span class="status ${statusClass}">${route.status}</span>${route.edicoes?.length ? ' <span class="form-help">editada</span>' : ""}</td>
-                <td class="table-actions">${route.pagamento === "Pago"
-                    ? '<span class="form-help">Pago</span>'
-                    : `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>`}</td>
+                <td class="table-actions">${route.pagamento !== "Pago" ? `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>` : '<span class="form-help">Pago</span>'}
+                    <button class="btn btn-small btn-muted" data-delete-route="${escapeHtml(route.id)}" type="button">Excluir</button></td>
             </tr>
         `;
     }).join("");
@@ -516,15 +526,16 @@ function renderWeek() {
 
     weekRoutes.forEach((route) => {
         const groupKey = `${route.driverId}|${route.empresa || ""}`;
-        const item = byDriver.get(groupKey) || { driverId: route.driverId, empresa: route.empresa || "-", saidas: 0, entregues: 0, retornados: 0, total: 0 };
+        const item = byDriver.get(groupKey) || { driverId: route.driverId, empresa: route.empresa || "-", saidas: 0, entregues: 0, retornados: 0, total: 0, routes: [] };
         item.saidas += Number(route.saida || 0);
         item.entregues += Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0));
         item.retornados += Number(route.retornados || 0);
         item.total += routeTotal(route);
+        item.routes.push(route);
         byDriver.set(groupKey, item);
     });
 
-    setText('[data-week="delivered"]', weekRoutes.reduce((sum, route) => sum + Number(route.entregues || 0), 0));
+    setText('[data-week="delivered"]', weekRoutes.reduce((sum, route) => sum + Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)), 0));
     setText('[data-week="returned"]', weekRoutes.reduce((sum, route) => sum + Number(route.retornados || 0), 0));
     setText('[data-week="value"]', money(weekRoutes.reduce((sum, route) => sum + routeTotal(route), 0)));
     setText('[data-week="drivers"]', new Set(weekRoutes.map((route) => route.driverId)).size);
@@ -533,7 +544,7 @@ function renderWeek() {
     if (!tbody) return;
 
     if (!byDriver.size) {
-        renderEmpty(tbody, 6, "Nenhum fechamento nos ultimos 7 dias.");
+        renderEmpty(tbody, 8, "Nenhum fechamento nos ultimos 7 dias.");
         return;
     }
 
@@ -543,6 +554,8 @@ function renderWeek() {
             <tr>
                 <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${escapeHtml(item.empresa)}</td>
+                <td>${item.routes.map((route) => formatDate(route.data)).sort().join(", ")}</td>
+                <td>${escapeHtml(getDriver(item.driverId)?.pixChave || "Sem chave cadastrada")}</td>
                 <td>${item.saidas}</td>
                 <td>${item.entregues}</td>
                 <td>${item.retornados}</td>
@@ -556,16 +569,19 @@ function renderPayments() {
     const tbody = document.querySelector("[data-payments-table]");
     if (!tbody) return;
 
-    const closedRoutes = state.routes.filter((route) => route.status === "Fechado");
+    const allClosedRoutes = state.routes.filter((route) => route.status === "Fechado");
+    const start = document.querySelector("[data-payment-start]")?.value || "";
+    const end = document.querySelector("[data-payment-end]")?.value || "";
+    const closedRoutes = allClosedRoutes.filter((route) => (!start || route.data >= start) && (!end || route.data <= end));
     const pending = closedRoutes.filter((route) => route.pagamento !== "Pago");
     const paid = closedRoutes.filter((route) => route.pagamento === "Pago");
 
     setText('[data-payments="pending"]', money(pending.reduce((sum, route) => sum + routeTotal(route), 0)));
     setText('[data-payments="paid"]', money(paid.reduce((sum, route) => sum + routeTotal(route), 0)));
-    setText("[data-payment-count]", `${closedRoutes.length} itens`);
+    setText("[data-payment-count]", `${closedRoutes.length} itens no período`);
 
     if (!closedRoutes.length) {
-        renderEmpty(tbody, 6, "Nenhum fechamento disponivel para pagamento.");
+        renderEmpty(tbody, 7, "Nenhum fechamento disponivel para pagamento.");
         return;
     }
 
@@ -574,6 +590,7 @@ function renderPayments() {
         const isPaid = route.pagamento === "Pago";
         return `
             <tr>
+                <td><input type="checkbox" data-payment-select value="${escapeHtml(route.id)}" aria-label="Selecionar pagamento de ${escapeHtml(driver?.nome || "entregador")}"></td>
                 <td>${formatDate(route.data)}</td>
                 <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
                 <td>${driver?.pixChave
@@ -1001,6 +1018,14 @@ function renderDailyReport() {
     const date = dateInput.value || today;
     const routes = state.routes.filter((route) => route.data === date);
     const total = summarizeReport(routes);
+    const periodPerformance = (days) => {
+        const startDate = addCalendarDays(date, -(days - 1));
+        const summary = summarizeReport(state.routes.filter((route) => route.data >= startDate && route.data <= date));
+        return percentLabel(summary.delivered, summary.delivered + summary.failed);
+    };
+    setText('[data-performance="daily"]', percentLabel(total.delivered, total.delivered + total.failed));
+    setText('[data-performance="weekly"]', periodPerformance(7));
+    setText('[data-performance="fortnight"]', periodPerformance(15));
 
     setText("[data-report-title]", `Relatório diário - ${formatDate(date)}`);
     setText('[data-report="out"]', total.out);
@@ -1646,7 +1671,7 @@ function setupForms() {
 }
 
 function setupActions() {
-    document.addEventListener("click", (event) => {
+    document.addEventListener("click", async (event) => {
         if (event.target.closest("[data-logout]")) {
             window.rmsSupabase.signOut();
             window.location.href = "index.html";
@@ -1724,6 +1749,22 @@ function setupActions() {
             if (route) startRouteEdit(route);
         }
 
+        const deleteRouteButton = event.target.closest("[data-delete-route]");
+        if (deleteRouteButton) {
+            const route = state.routes.find((item) => item.id === deleteRouteButton.dataset.deleteRoute);
+            if (route && window.confirm(`Excluir a rota de ${formatDate(route.data)}? Esta ação não pode ser desfeita.`)) {
+                try {
+                    if (window.rmsSupabase.configured) await window.rmsSupabase.deleteRoute(route.id);
+                    state.routes = state.routes.filter((item) => item.id !== route.id);
+                    renderHistory(document.querySelector("[data-search-history]")?.value || "");
+                    toast("Rota excluída.");
+                } catch (error) {
+                    console.error("Falha ao excluir rota:", error);
+                    toast("Não foi possível excluir a rota. Verifique se há dados vinculados.");
+                }
+            }
+        }
+
         if (event.target.closest("[data-route-edit-cancel]")) closeRouteEdit();
 
         const editEmployeeButton = event.target.closest("[data-edit-employee]");
@@ -1794,6 +1835,53 @@ function setupActions() {
     if (search) {
         search.addEventListener("input", () => renderHistory(search.value));
     }
+    const historySort = document.querySelector("[data-sort-history]");
+    if (historySort) historySort.addEventListener("change", () => renderHistory(search?.value || ""));
+
+    ["[data-payment-start]", "[data-payment-end]"].forEach((selector) => {
+        const input = document.querySelector(selector);
+        if (input) input.addEventListener("change", renderPayments);
+    });
+    const selectAllPayments = document.querySelector("[data-payment-select-all]");
+    if (selectAllPayments) selectAllPayments.addEventListener("change", () => {
+        document.querySelectorAll("[data-payment-select]").forEach((checkbox) => { checkbox.checked = selectAllPayments.checked; });
+    });
+    const applyPayments = document.querySelector("[data-payment-bulk-apply]");
+    if (applyPayments) applyPayments.addEventListener("click", async () => {
+        const selected = [...document.querySelectorAll("[data-payment-select]:checked")].map((box) => box.value);
+        if (!selected.length) return toast("Selecione ao menos um fechamento.");
+        const paid = document.querySelector("[data-payment-bulk-status]").value === "Pago";
+        for (const id of selected) {
+            const route = state.routes.find((item) => item.id === id);
+            if (!route) continue;
+            route.pagamento = paid ? "Pago" : "Pendente";
+            if (paid) route.dataPagamento = today;
+            else delete route.dataPagamento;
+        }
+        await saveData(state);
+        renderPayments();
+        renderFortnight();
+        toast("Pagamentos atualizados.");
+    });
+    const exportWeek = document.querySelector("[data-export-week]");
+    if (exportWeek) exportWeek.addEventListener("click", exportWeekReport);
+}
+
+function exportWeekReport() {
+    const rows = [["Entregador", "Empresa", "Datas das rotas", "Chave Pix", "Saídas", "Entregues", "Retornados", "Total"]];
+    const groups = new Map();
+    const cutoff = addCalendarDays(today, -6);
+    state.routes.filter((route) => route.status === "Fechado" && route.data >= cutoff && route.data <= today).forEach((route) => {
+        const key = `${route.driverId}|${route.empresa || ""}`;
+        const item = groups.get(key) || { routes: [], saidas: 0, entregues: 0, retornados: 0, total: 0, driverId: route.driverId, empresa: route.empresa || "-" };
+        item.routes.push(route); item.saidas += Number(route.saida || 0); item.entregues += Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)); item.retornados += Number(route.retornados || 0); item.total += routeTotal(route); groups.set(key, item);
+    });
+    groups.forEach((item) => rows.push([getDriver(item.driverId)?.nome || "Entregador removido", item.empresa, [...new Set(item.routes.map((route) => formatDate(route.data)))].sort().join(", "), getDriver(item.driverId)?.pixChave || "Sem chave cadastrada", item.saidas, item.entregues, item.retornados, Number(item.total.toFixed(2))]));
+    const xml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
+    const body = rows.map((row) => `<Row>${row.map((value, i) => `<Cell><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${xml(value)}</Data></Cell>`).join("")}</Row>`).join("");
+    const workbook = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Fechamento semanal"><Table>${body}</Table></Worksheet></Workbook>`;
+    const url = URL.createObjectURL(new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = "fechamento-semanal.xls"; link.click(); URL.revokeObjectURL(url);
 }
 
 function exportHistory() {
