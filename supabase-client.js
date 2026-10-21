@@ -224,6 +224,19 @@
         return data;
     }
 
+    async function getDriverDetails(driverId) {
+        const { data, error } = await client.rpc("get_driver_details", { p_driver_id: driverId });
+        if (error) throw error;
+        return data;
+    }
+
+    async function updateDriver(record) {
+        const { data, error } = await client.rpc("update_driver", { p_driver: record });
+        if (error) throw error;
+        recordSnapshots.drivers.set(data.id, JSON.stringify(publicDriver(data)));
+        return data;
+    }
+
     async function uploadDriverDocument(driverId, kind, prepared) {
         const path = `${driverId}/${kind}-${Date.now()}.${prepared.ext}`;
         const { error } = await client.storage
@@ -275,6 +288,8 @@
         updateWarehouseEntry,
         deleteWarehouseEntry,
         registerDriver,
+        getDriverDetails,
+        updateDriver,
         uploadDriverDocument,
         getDriverDocumentUrl,
         removeDriverDocuments,

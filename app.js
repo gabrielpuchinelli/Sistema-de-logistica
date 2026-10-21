@@ -336,7 +336,7 @@ function driverDocumentsCell(driver) {
         !driver.docResidencia && "residência"
     ].filter(Boolean);
     const pending = missing.length ? `<span class="form-help">Pendente: ${missing.join(", ")}</span>` : "";
-    return `<td class="table-actions" data-admin-only>${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
+    return `<td class="table-actions">${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
 }
 
 function renderDrivers() {
@@ -353,16 +353,16 @@ function renderDrivers() {
     tbody.innerHTML = sortedByName(state.drivers).map((driver) => `
         <tr>
             <td>${escapeHtml(driver.nome)}</td>
-            <td data-admin-only>${escapeHtml(driver.cpf || "-")}</td>
+            <td>${escapeHtml(driver.cpf || "-")}</td>
             <td>${escapeHtml(driver.telefone)}</td>
-            <td data-admin-only>${escapeHtml(driver.email || "-")}</td>
+            <td>${escapeHtml(driver.email || "-")}</td>
             <td>${escapeHtml(driver.veiculo)}</td>
-            <td data-admin-only>${driver.pixChave
+            <td>${driver.pixChave
                 ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
                 : "Sem chave cadastrada"}</td>
             <td><span class="status ${driver.status === "Ativo" ? "status-ativo" : "status-inativo"}">${driver.status}</span></td>
             ${driverDocumentsCell(driver)}
-            <td class="table-actions" data-admin-only>
+            <td class="table-actions">
                 <button class="btn btn-small btn-secondary" data-edit-driver="${escapeHtml(driver.id)}" type="button">
                     Editar
                 </button>
@@ -1455,7 +1455,16 @@ function setupForms() {
 
             let succeeded = true;
             try {
-                if (state.role === "operador") {
+                if (state.role === "operador" && existingDriver) {
+                    const updatedDriver = await window.rmsSupabase.updateDriver({
+                        ...existingDriver, ...data, ...documentPaths, id: targetId
+                    });
+                    Object.assign(existingDriver, updatedDriver);
+                    if (replacedPaths.length) {
+                        window.rmsSupabase.removeDriverDocuments(replacedPaths)
+                            .catch((error) => console.error("Falha ao remover documento antigo:", error));
+                    }
+                } else if (state.role === "operador") {
                     const savedDriver = await window.rmsSupabase.registerDriver({ id: targetId, ...data, ...documentPaths });
                     state.drivers.push(savedDriver);
                 } else if (existingDriver) {
@@ -1695,11 +1704,23 @@ function setupActions() {
 
         const editDriverButton = event.target.closest("[data-edit-driver]");
         if (editDriverButton) {
-            const driver = getDriver(editDriverButton.dataset.editDriver);
+            let driver = getDriver(editDriverButton.dataset.editDriver);
+            if (state.role === "operador" && driver) {
+                editDriverButton.disabled = true;
+                try {
+                    driver = { ...driver, ...await window.rmsSupabase.getDriverDetails(driver.id) };
+                    Object.assign(getDriver(driver.id), driver);
+                } catch (error) {
+                    console.error("Falha ao carregar dados do entregador:", error);
+                    toast("Nao foi possivel carregar os dados para edicao.");
+                    editDriverButton.disabled = false;
+                    return;
+                }
+                editDriverButton.disabled = false;
+            }
             const driverForm = document.querySelector('[data-form="driver"]');
             if (driver && driverForm) startDriverEdit(driverForm, driver);
         }
-
         const openDocButton = event.target.closest("[data-open-doc]");
         if (openDocButton) {
             const driver = getDriver(openDocButton.dataset.openDoc);
@@ -1717,10 +1738,20 @@ function setupActions() {
         if (toggleDriverButton) {
             const driver = getDriver(toggleDriverButton.dataset.toggleDriver);
             if (driver) {
-                driver.status = driver.status === "Ativo" ? "Inativo" : "Ativo";
-                saveData(state);
+                const previousStatus = driver.status;
+                driver.status = previousStatus === "Ativo" ? "Inativo" : "Ativo";
+                const saved = state.role === "operador"
+                    ? await window.rmsSupabase.getDriverDetails(driver.id)
+                        .then((details) => window.rmsSupabase.updateDriver({ ...driver, ...details, status: driver.status }))
+                        .then((updated) => { Object.assign(driver, updated); return true; })
+                        .catch((error) => {
+                        console.error("Falha ao atualizar status:", error);
+                        return false;
+                    })
+                    : await saveData(state);
+                if (!saved) driver.status = previousStatus;
                 renderDrivers();
-                toast("Status atualizado.");
+                toast(saved ? "Status atualizado." : "Nao foi possivel atualizar o status.");
             }
         }
 
