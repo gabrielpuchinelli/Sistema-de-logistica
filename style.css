@@ -497,6 +497,7 @@ output {
 }
 
 .resumo-item {
+    min-width: 0;
     padding: 18px;
     background: #f7faf6;
     border: 1px solid var(--borda);
@@ -511,6 +512,7 @@ output {
 }
 
 .resumo-item strong {
+    overflow-wrap: anywhere;
     font-size: 1.6rem;
 }
 
@@ -520,6 +522,10 @@ output {
     gap: 16px;
     margin-top: 18px;
     align-items: end;
+}
+
+.form-grid:has([data-route-filter]) {
+    grid-template-columns: minmax(180px, 1.2fr) minmax(260px, 1.8fr) minmax(130px, 0.8fr) minmax(120px, 0.7fr) minmax(180px, auto);
 }
 
 .dashboard-entry-form {
@@ -673,6 +679,10 @@ td {
     .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .form-grid:has([data-route-filter]) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
@@ -813,9 +823,25 @@ td {
 
     .cards,
     .cards-compact,
-    .resumo-grid,
     .form-grid {
         grid-template-columns: 1fr;
+    }
+
+    .form-grid:has([data-route-filter]) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .closure-preview {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .closure-preview .resumo-item {
+        padding: 12px;
+    }
+
+    .closure-preview .resumo-item strong {
+        font-size: 1.25rem;
     }
 
     .role-operador .dashboard-cards {

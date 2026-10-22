@@ -400,13 +400,20 @@ function fillCompanySelects() {
 
 function fillRouteSelects() {
     document.querySelectorAll("[data-route-select]").forEach((select) => {
+        const filter = select.form?.querySelector("[data-route-filter]");
+        const selectedDate = filter?.value || "";
         const openRoutes = state.routes.filter((route) => route.status === "Aberto");
-        select.innerHTML = openRoutes.length
-            ? openRoutes.map((route) => {
+        const filteredRoutes = openRoutes.filter((route) => {
+            return !selectedDate || route.data === selectedDate;
+        });
+        const previousSelection = select.value;
+        select.innerHTML = filteredRoutes.length
+            ? filteredRoutes.map((route) => {
                 const driver = getDriver(route.driverId);
                 return `<option value="${escapeHtml(route.id)}">${formatDate(route.data)} - ${escapeHtml(driver?.nome || "Entregador")} - ${escapeHtml(route.empresa || "Empresa nao informada")} - ${route.saida} pacotes</option>`;
             }).join("")
-            : '<option value="">Nenhuma saida em aberto</option>';
+            : `<option value="">${selectedDate ? "Nenhuma saida em aberto nesta data" : "Nenhuma saida em aberto"}</option>`;
+        if (filteredRoutes.some((route) => route.id === previousSelection)) select.value = previousSelection;
     });
 }
 
@@ -1546,6 +1553,10 @@ function setupForms() {
     const closeForm = document.querySelector('[data-form="close-route"]');
     if (closeForm) {
         closeForm.addEventListener("input", () => updateClosurePreview(closeForm));
+        closeForm.querySelector("[data-route-filter]")?.addEventListener("input", () => {
+            fillRouteSelects();
+            updateClosurePreview(closeForm);
+        });
         closeForm.elements.namedItem("routeId").addEventListener("change", () => updateClosurePreview(closeForm));
         closeForm.addEventListener("submit", async (event) => {
             event.preventDefault();
