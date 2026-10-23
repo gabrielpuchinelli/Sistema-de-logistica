@@ -159,14 +159,17 @@ function routeTotal(route) {
 }
 
 function dailyStock(date, company) {
-    const matches = (item) => company === undefined || item.empresa === company;
+    const matches = (item) => company === undefined || (company === "" ? !item.empresa : item.empresa === company);
     const received = state.entradasGalpao
         .filter((entry) => entry.data === date && matches(entry))
         .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
     const dispatched = state.routes
         .filter((route) => route.data === date && matches(route))
         .reduce((sum, route) => sum + Number(route.saida || 0), 0);
-    return { received, dispatched, available: received - dispatched };
+    const adjusted = (state.settings.stockAdjustments || [])
+        .filter((adjustment) => adjustment.data === date && (company === undefined || (company === "" ? !adjustment.empresa : adjustment.empresa === company)))
+        .reduce((sum, adjustment) => sum + Number(adjustment.quantidade || 0), 0);
+    return { received, dispatched, available: received - dispatched - adjusted };
 }
 
 function setText(selector, value) {
@@ -717,6 +720,8 @@ function renderSettings() {
     form.valorCarro.value = state.settings.valoresVeiculo.carro;
     form.valorVan.value = state.settings.valoresVeiculo.van;
     form.empresas.value = (state.settings.empresas || []).join("\n");
+    const zeroStockButton = document.querySelector("[data-zero-stock]");
+    if (zeroStockButton) zeroStockButton.hidden = state.role !== "admin";
 }
 
 function renderCompanyStock(date) {
@@ -1851,6 +1856,36 @@ function setupActions() {
         }
 
         const resetButton = event.target.closest("[data-reset-system]");
+        const zeroStockButton = event.target.closest("[data-zero-stock]");
+        if (zeroStockButton) {
+            if (state.role !== "admin") return toast("Somente administradores podem zerar o estoque.");
+            if (!window.confirm(`Zerar o estoque disponível de ${formatDate(today)}? As rotas já atribuídas serão mantidas.`)) return;
+
+            const companies = [...new Set([
+                ...(state.settings.empresas || []),
+                ...state.entradasGalpao.filter((entry) => entry.data === today).map((entry) => entry.empresa || ""),
+                ...state.routes.filter((route) => route.data === today).map((route) => route.empresa || "")
+            ])];
+            const adjustments = companies
+                .map((empresa) => ({ empresa, quantidade: Math.max(0, dailyStock(today, empresa).available) }))
+                .filter((item) => item.quantidade > 0)
+                .map((item) => ({ id: makeId(), data: today, empresa: item.empresa, quantidade: item.quantidade }));
+            if (!adjustments.length) return toast("O estoque disponível de hoje já está zerado.");
+
+            const previous = state.settings.stockAdjustments || [];
+            state.settings.stockAdjustments = [...previous, ...adjustments];
+            zeroStockButton.disabled = true;
+            const saved = await saveData(state);
+            if (!saved) state.settings.stockAdjustments = previous;
+            else {
+                renderWarehouse();
+                renderDashboard();
+                toast("Estoque disponível de hoje zerado. As rotas foram mantidas.");
+            }
+            zeroStockButton.disabled = false;
+            return;
+        }
+
         if (resetButton && confirm("Deseja apagar todos os dados do sistema?")) {
             window.rmsSupabase.clearBusinessData().then(() => {
                 window.location.href = "index.html";
