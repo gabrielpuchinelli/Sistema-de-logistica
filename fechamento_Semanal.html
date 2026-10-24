@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -47,9 +47,9 @@
         <section class="tabela-container">
             <div class="section-title">
                 <h2>Resumo por entregador</h2>
-                <span>Semana atual</span>
+                <span data-week-range></span>
             </div>
-            <div class="filters"><button class="btn btn-secondary" data-export-week type="button">Exportar Excel</button></div>
+            <div class="filters week-filters"><label>De <input type="date" data-week-start></label><label>Até <input type="date" data-week-end></label><button class="btn btn-secondary" data-export-week type="button">Exportar Excel</button></div>
             <table>
                 <thead>
                     <tr>

@@ -1,4 +1,4 @@
-const menuItems = [
+﻿const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
     ["nova-saida", "Nova Saída", "nova_Saida.html"],
@@ -525,13 +525,21 @@ function renderHistory(filter = "") {
     }).join("");
 }
 
-function renderWeek() {
-    const closedRoutes = state.routes.filter((route) => route.status === "Fechado");
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 6);
-    weekStart.setHours(0, 0, 0, 0);
+function getSelectedWeekRange() {
+    const startInput = document.querySelector("[data-week-start]");
+    const endInput = document.querySelector("[data-week-end]");
+    const currentDay = new Date(`${today}T00:00:00`).getDay();
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
 
-    const weekRoutes = closedRoutes.filter((route) => new Date(`${route.data}T00:00:00`) >= weekStart);
+    if (startInput && !startInput.value) startInput.value = addCalendarDays(today, mondayOffset);
+    if (endInput && !endInput.value) endInput.value = addCalendarDays(today, mondayOffset + 6);
+    return { start: startInput?.value || addCalendarDays(today, mondayOffset), end: endInput?.value || addCalendarDays(today, mondayOffset + 6) };
+}
+
+function renderWeek() {
+    const { start, end } = getSelectedWeekRange();
+    setText("[data-week-range]", `${formatDate(start)} a ${formatDate(end)}`);
+    const weekRoutes = state.routes.filter((route) => route.status === "Fechado" && route.data >= start && route.data <= end);
     const byDriver = new Map();
 
     weekRoutes.forEach((route) => {
@@ -554,7 +562,7 @@ function renderWeek() {
     if (!tbody) return;
 
     if (!byDriver.size) {
-        renderEmpty(tbody, 8, "Nenhum fechamento nos ultimos 7 dias.");
+        renderEmpty(tbody, 8, "Nenhum fechamento nesse periodo.");
         return;
     }
 
@@ -722,6 +730,8 @@ function renderSettings() {
     form.empresas.value = (state.settings.empresas || []).join("\n");
     const zeroStockButton = document.querySelector("[data-zero-stock]");
     if (zeroStockButton) zeroStockButton.hidden = state.role !== "admin";
+    const stockDateInput = document.querySelector("[data-zero-stock-date]");
+    if (stockDateInput) stockDateInput.value = today;
 }
 
 function renderCompanyStock(date) {
@@ -1859,18 +1869,21 @@ function setupActions() {
         const zeroStockButton = event.target.closest("[data-zero-stock]");
         if (zeroStockButton) {
             if (state.role !== "admin") return toast("Somente administradores podem zerar o estoque.");
-            if (!window.confirm(`Zerar o estoque disponível de ${formatDate(today)}? As rotas já atribuídas serão mantidas.`)) return;
+            const stockDateInput = document.querySelector("[data-zero-stock-date]");
+            const selectedDate = stockDateInput?.value;
+            if (!selectedDate) return toast("Selecione a data do estoque.");
+            if (!window.confirm(`Zerar o estoque de ${formatDate(selectedDate)}? As rotas atribuidas serao mantidas.`)) return;
 
             const companies = [...new Set([
                 ...(state.settings.empresas || []),
-                ...state.entradasGalpao.filter((entry) => entry.data === today).map((entry) => entry.empresa || ""),
-                ...state.routes.filter((route) => route.data === today).map((route) => route.empresa || "")
+                ...state.entradasGalpao.filter((entry) => entry.data === selectedDate).map((entry) => entry.empresa || ""),
+                ...state.routes.filter((route) => route.data === selectedDate).map((route) => route.empresa || "")
             ])];
             const adjustments = companies
-                .map((empresa) => ({ empresa, quantidade: Math.max(0, dailyStock(today, empresa).available) }))
+                .map((empresa) => ({ empresa, quantidade: Math.max(0, dailyStock(selectedDate, empresa).available) }))
                 .filter((item) => item.quantidade > 0)
-                .map((item) => ({ id: makeId(), data: today, empresa: item.empresa, quantidade: item.quantidade }));
-            if (!adjustments.length) return toast("O estoque disponível de hoje já está zerado.");
+                .map((item) => ({ id: makeId(), data: selectedDate, empresa: item.empresa, quantidade: item.quantidade }));
+            if (!adjustments.length) return toast("O estoque nessa data ja esta zerado.");
 
             const previous = state.settings.stockAdjustments || [];
             state.settings.stockAdjustments = [...previous, ...adjustments];
@@ -1880,7 +1893,7 @@ function setupActions() {
             else {
                 renderWarehouse();
                 renderDashboard();
-                toast("Estoque disponível de hoje zerado. As rotas foram mantidas.");
+                toast("Estoque zerado nessa data. As rotas foram mantidas.");
             }
             zeroStockButton.disabled = false;
             return;
@@ -1940,6 +1953,10 @@ function setupActions() {
         renderFortnight();
         toast("Pagamentos atualizados.");
     });
+    const weekStartInput = document.querySelector("[data-week-start]");
+    const weekEndInput = document.querySelector("[data-week-end]");
+    if (weekStartInput) weekStartInput.addEventListener("change", renderWeek);
+    if (weekEndInput) weekEndInput.addEventListener("change", renderWeek);
     const exportWeek = document.querySelector("[data-export-week]");
     if (exportWeek) exportWeek.addEventListener("click", exportWeekReport);
 }
@@ -1947,8 +1964,8 @@ function setupActions() {
 function exportWeekReport() {
     const rows = [["Entregador", "Empresa", "Datas das rotas", "Chave Pix", "Saídas", "Entregues", "Retornados", "Total"]];
     const groups = new Map();
-    const cutoff = addCalendarDays(today, -6);
-    state.routes.filter((route) => route.status === "Fechado" && route.data >= cutoff && route.data <= today).forEach((route) => {
+    const { start, end } = getSelectedWeekRange();
+    state.routes.filter((route) => route.status === "Fechado" && route.data >= start && route.data <= end).forEach((route) => {
         const key = `${route.driverId}|${route.empresa || ""}`;
         const item = groups.get(key) || { routes: [], saidas: 0, entregues: 0, retornados: 0, total: 0, driverId: route.driverId, empresa: route.empresa || "-" };
         item.routes.push(route); item.saidas += Number(route.saida || 0); item.entregues += Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)); item.retornados += Number(route.retornados || 0); item.total += routeTotal(route); groups.set(key, item);
