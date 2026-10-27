@@ -914,28 +914,36 @@ function exportWeek() {
     const header = (labels) => labels.map((value) => ({ value, style: "header" }));
     const sum = (list, pick) => list.reduce((total, item) => total + pick(item), 0);
 
+    const dailyHeaders = days.map((day) => `Pacotes ${day.date.slice(8)}/${day.date.slice(5, 7)}`);
     const summaryRows = [
-        header(["Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Datas das rotas", "Saídas", "Entregues", "Retornados", "Total (R$)"]),
-        ...summary.map((item) => [
-            item.driver?.nome || "Entregador removido",
-            item.driver?.pixTipo || "",
-            item.driver?.pixChave || "",
-            item.empresa,
-            item.dates.map(formatDate).join(", "),
-            item.saidas,
-            item.entregues,
-            item.retornados,
-            { value: Number(item.total.toFixed(2)), style: "money" }
-        ]),
+        header(["Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Datas das rotas", ...dailyHeaders, "Saídas no período", "Entregues", "Retornados", "Total (R$)"]),
+        ...summary.map((item) => {
+            const itemRoutes = detail.filter((route) => `${route.driverId}|${route.empresa || ""}` === item.key);
+            const dailyPackages = days.map((day) => itemRoutes
+                .filter((route) => route.data === day.date)
+                .reduce((total, route) => total + Number(route.saida || 0), 0));
+            return [
+                item.driver?.nome || "Entregador removido",
+                item.driver?.pixTipo || "",
+                item.driver?.pixChave || "",
+                item.empresa,
+                item.dates.map(formatDate).join(", "),
+                ...dailyPackages,
+                item.saidas,
+                item.entregues,
+                item.retornados,
+                { value: Number(item.total.toFixed(2)), style: "money" }
+            ];
+        }),
         [
             { value: "Total", style: "bold" }, "", "", "", "",
+            ...days.map((day) => ({ value: day.saidas, style: "bold" })),
             { value: sum(summary, (item) => item.saidas), style: "bold" },
             { value: sum(summary, (item) => item.entregues), style: "bold" },
             { value: sum(summary, (item) => item.retornados), style: "bold" },
             { value: Number(sum(summary, (item) => item.total).toFixed(2)), style: "boldMoney" }
         ]
     ];
-
     const daysSum = (field) => days.reduce((total, day) => total + day[field], 0);
     const daysRows = [
         header(["Data", "Dia da semana", "Saídas", "Entregues", "Retornados", "Valor (R$)"]),
@@ -980,7 +988,7 @@ function exportWeek() {
     const dispatched = (route) => Number(route.saida || 0);
 
     downloadXlsx(`fechamento-semanal-${range.start}-a-${range.end}.xlsx`, [
-        { name: "Resumo por entregador", widths: [28, 18, 30, 24, 44, 10, 11, 12, 14], rows: summaryRows },
+        { name: "Resumo por entregador", widths: [28, 18, 30, 24, 44, ...days.map(() => 13), 14, 11, 12, 14], rows: summaryRows },
         { name: "Total por dia", widths: [12, 16, 10, 11, 12, 14], rows: daysRows },
         { name: "Entregues por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, delivered) },
         { name: "Saidas por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, dispatched) },
