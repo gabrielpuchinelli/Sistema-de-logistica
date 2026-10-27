@@ -734,8 +734,22 @@ function pixCell(driver) {
 }
 
 function weekRange() {
-    const end = document.querySelector("[data-week-date]")?.value || today;
-    return { start: shiftDate(end, -6), end };
+    const startInput = document.querySelector("[data-week-start]");
+    const endInput = document.querySelector("[data-week-end]");
+    const weekday = new Date(`${today}T00:00:00`).getDay();
+    const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+    let start = startInput?.value || "";
+    let end = endInput?.value || "";
+
+    if (!start && !end) {
+        start = shiftDate(today, mondayOffset);
+        end = shiftDate(start, 6);
+    } else if (!start) {
+        start = shiftDate(end, -6);
+    } else if (!end) {
+        end = shiftDate(start, 6);
+    }
+    return { start, end };
 }
 
 function weekdayName(isoDate) {
@@ -775,8 +789,7 @@ function weekData() {
     ));
 
     const days = [];
-    for (let offset = 0; offset < 7; offset++) {
-        const date = shiftDate(range.start, offset);
+    for (let date = range.start; date <= range.end; date = shiftDate(date, 1)) {
         const dayRoutes = routes.filter((route) => route.data === date);
         days.push({
             date,
@@ -1801,10 +1814,21 @@ function setupForms() {
         reportDate.value = today;
         reportDate.addEventListener("change", renderDailyReport);
     }
-    const weekDate = document.querySelector("[data-week-date]");
-    if (weekDate) {
-        weekDate.value = today;
-        weekDate.addEventListener("change", renderWeek);
+    const weekStart = document.querySelector("[data-week-start]");
+    const weekEnd = document.querySelector("[data-week-end]");
+    if (weekStart && weekEnd) {
+        const selectedRange = weekRange();
+        weekStart.value = selectedRange.start;
+        weekEnd.value = selectedRange.end;
+        const updateWeek = (changedInput) => {
+            if (weekStart.value > weekEnd.value) {
+                if (changedInput === weekStart) weekEnd.value = weekStart.value;
+                else weekStart.value = weekEnd.value;
+            }
+            renderWeek();
+        };
+        weekStart.addEventListener("change", () => updateWeek(weekStart));
+        weekEnd.addEventListener("change", () => updateWeek(weekEnd));
     }
     const printReport = document.querySelector("[data-print-report]");
     if (printReport) printReport.addEventListener("click", () => window.print());
