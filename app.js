@@ -1,4 +1,4 @@
-﻿const menuItems = [
+const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
     ["nova-saida", "Nova Saída", "nova_Saida.html"],
@@ -159,17 +159,14 @@ function routeTotal(route) {
 }
 
 function dailyStock(date, company) {
-    const matches = (item) => company === undefined || (company === "" ? !item.empresa : item.empresa === company);
+    const matches = (item) => company === undefined || item.empresa === company;
     const received = state.entradasGalpao
         .filter((entry) => entry.data === date && matches(entry))
         .reduce((sum, entry) => sum + Number(entry.quantidade || 0), 0);
     const dispatched = state.routes
         .filter((route) => route.data === date && matches(route))
         .reduce((sum, route) => sum + Number(route.saida || 0), 0);
-    const adjusted = (state.settings.stockAdjustments || [])
-        .filter((adjustment) => adjustment.data === date && (company === undefined || (company === "" ? !adjustment.empresa : adjustment.empresa === company)))
-        .reduce((sum, adjustment) => sum + Number(adjustment.quantidade || 0), 0);
-    return { received, dispatched, available: received - dispatched - adjusted };
+    return { received, dispatched, available: received - dispatched };
 }
 
 function setText(selector, value) {
@@ -339,7 +336,7 @@ function driverDocumentsCell(driver) {
         !driver.docResidencia && "residência"
     ].filter(Boolean);
     const pending = missing.length ? `<span class="form-help">Pendente: ${missing.join(", ")}</span>` : "";
-    return `<td class="table-actions">${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
+    return `<td class="table-actions" data-admin-only>${buttons.join("")}${buttons.length && pending ? "<br>" : ""}${pending}</td>`;
 }
 
 function renderDrivers() {
@@ -356,11 +353,11 @@ function renderDrivers() {
     tbody.innerHTML = sortedByName(state.drivers).map((driver) => `
         <tr>
             <td>${escapeHtml(driver.nome)}</td>
-            <td>${escapeHtml(driver.cpf || "-")}</td>
+            <td data-admin-only>${escapeHtml(driver.cpf || "-")}</td>
             <td>${escapeHtml(driver.telefone)}</td>
-            <td>${escapeHtml(driver.email || "-")}</td>
+            <td data-admin-only>${escapeHtml(driver.email || "-")}</td>
             <td>${escapeHtml(driver.veiculo)}</td>
-            <td>${driver.pixChave
+            <td data-admin-only>${driver.pixChave
                 ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
                 : "Sem chave cadastrada"}</td>
             <td><span class="status ${driver.status === "Ativo" ? "status-ativo" : "status-inativo"}">${driver.status}</span></td>
@@ -403,20 +400,13 @@ function fillCompanySelects() {
 
 function fillRouteSelects() {
     document.querySelectorAll("[data-route-select]").forEach((select) => {
-        const filter = select.form?.querySelector("[data-route-filter]");
-        const selectedDate = filter?.value || "";
         const openRoutes = state.routes.filter((route) => route.status === "Aberto");
-        const filteredRoutes = openRoutes.filter((route) => {
-            return !selectedDate || route.data === selectedDate;
-        });
-        const previousSelection = select.value;
-        select.innerHTML = filteredRoutes.length
-            ? filteredRoutes.map((route) => {
+        select.innerHTML = openRoutes.length
+            ? openRoutes.map((route) => {
                 const driver = getDriver(route.driverId);
                 return `<option value="${escapeHtml(route.id)}">${formatDate(route.data)} - ${escapeHtml(driver?.nome || "Entregador")} - ${escapeHtml(route.empresa || "Empresa nao informada")} - ${route.saida} pacotes</option>`;
             }).join("")
-            : `<option value="">${selectedDate ? "Nenhuma saida em aberto nesta data" : "Nenhuma saida em aberto"}</option>`;
-        if (filteredRoutes.some((route) => route.id === previousSelection)) select.value = previousSelection;
+            : '<option value="">Nenhuma saida em aberto</option>';
     });
 }
 
@@ -481,22 +471,31 @@ function renderHistory(filter = "") {
     if (!tbody) return;
 
     const term = filter.toLowerCase().trim();
-    const rows = state.routes.filter((route) => {
-        const driver = getDriver(route.driverId);
-        const text = `${driver?.nome || ""} ${route.empresa || ""} ${route.data} ${route.status}`.toLowerCase();
-        return text.includes(term);
-    });
-    const sort = document.querySelector("[data-sort-history]")?.value || "recent";
-    rows.sort((a, b) => {
-        const nameA = getDriver(a.driverId)?.nome || "";
-        const nameB = getDriver(b.driverId)?.nome || "";
-        if (sort === "oldest") return a.data.localeCompare(b.data);
-        if (sort === "name-asc") return nameA.localeCompare(nameB, "pt-BR", { sensitivity: "base" });
-        if (sort === "name-desc") return nameB.localeCompare(nameA, "pt-BR", { sensitivity: "base" });
-        if (sort === "value-desc") return routeTotal(b) - routeTotal(a);
-        if (sort === "value-asc") return routeTotal(a) - routeTotal(b);
-        return b.data.localeCompare(a.data);
-    });
+    const sortKey = document.querySelector("[data-sort-history]")?.value || "date-desc";
+    const nameOf = (route) => getDriver(route.driverId)?.nome || "";
+    const compareText = (a, b) => String(a).localeCompare(String(b), "pt-BR", { sensitivity: "base" });
+    const compareDate = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const sorters = {
+        "date-desc": (a, b) => compareDate(b.route.data, a.route.data) || b.index - a.index,
+        "date-asc": (a, b) => compareDate(a.route.data, b.route.data) || a.index - b.index,
+        "driver-asc": (a, b) => compareText(nameOf(a.route), nameOf(b.route)) || compareDate(b.route.data, a.route.data),
+        "driver-desc": (a, b) => compareText(nameOf(b.route), nameOf(a.route)) || compareDate(b.route.data, a.route.data),
+        "company-asc": (a, b) => compareText(a.route.empresa || "", b.route.empresa || "") || compareDate(b.route.data, a.route.data),
+        "value-desc": (a, b) => routeTotal(b.route) - routeTotal(a.route) || b.index - a.index,
+        "value-asc": (a, b) => routeTotal(a.route) - routeTotal(b.route) || b.index - a.index,
+        "packages-desc": (a, b) => Number(b.route.saida || 0) - Number(a.route.saida || 0) || b.index - a.index,
+        "packages-asc": (a, b) => Number(a.route.saida || 0) - Number(b.route.saida || 0) || b.index - a.index
+    };
+
+    const rows = state.routes
+        .map((route, index) => ({ route, index }))
+        .filter(({ route }) => {
+            const driver = getDriver(route.driverId);
+            const text = `${driver?.nome || ""} ${route.empresa || ""} ${route.data} ${route.status}`.toLowerCase();
+            return text.includes(term);
+        })
+        .sort(sorters[sortKey] || sorters["date-desc"])
+        .map(({ route }) => route);
 
     setText("[data-history-count]", `${rows.length} registros`);
 
@@ -518,112 +517,537 @@ function renderHistory(filter = "") {
                 <td>${route.retornados || 0}</td>
                 <td>${money(routeTotal(route))}</td>
                 <td><span class="status ${statusClass}">${route.status}</span>${route.edicoes?.length ? ' <span class="form-help">editada</span>' : ""}</td>
-                <td class="table-actions">${route.pagamento !== "Pago" ? `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>` : '<span class="form-help">Pago</span>'}
-                    <button class="btn btn-small btn-muted" data-delete-route="${escapeHtml(route.id)}" type="button">Excluir</button></td>
+                <td class="table-actions">${route.pagamento === "Pago"
+                    ? '<span class="form-help">Pago</span>'
+                    : `<button class="btn btn-small btn-secondary" data-edit-route="${escapeHtml(route.id)}" type="button">Editar</button>
+                       <button class="btn btn-small btn-danger" data-delete-route="${escapeHtml(route.id)}" type="button">Excluir</button>`}</td>
             </tr>
         `;
     }).join("");
 }
 
-function getSelectedWeekRange() {
-    const startInput = document.querySelector("[data-week-start]");
-    const endInput = document.querySelector("[data-week-end]");
-    const currentDay = new Date(`${today}T00:00:00`).getDay();
-    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
-
-    if (startInput && !startInput.value) startInput.value = addCalendarDays(today, mondayOffset);
-    if (endInput && !endInput.value) endInput.value = addCalendarDays(today, mondayOffset + 6);
-    return { start: startInput?.value || addCalendarDays(today, mondayOffset), end: endInput?.value || addCalendarDays(today, mondayOffset + 6) };
+async function removeRoute(routeId) {
+    try {
+        const result = await window.rmsSupabase.deleteRoute(routeId);
+        state.routes = state.routes.filter((route) => route.id !== routeId);
+        if (result.removed_entry_id) {
+            state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== result.removed_entry_id);
+        }
+        const editForm = document.querySelector('[data-form="route-edit"]');
+        if (editForm && editForm.elements.namedItem("routeId").value === routeId) closeRouteEdit();
+        renderHistory(document.querySelector("[data-search-history]")?.value || "");
+        toast("Saída excluída.");
+    } catch (error) {
+        console.error("Falha ao excluir saída:", error);
+        toast(error.code === "P0001"
+            ? error.message
+            : "Não foi possível excluir a saída. Tente novamente.", 6000);
+    }
 }
 
-function renderWeek() {
-    const { start, end } = getSelectedWeekRange();
-    setText("[data-week-range]", `${formatDate(start)} a ${formatDate(end)}`);
-    const weekRoutes = state.routes.filter((route) => route.status === "Fechado" && route.data >= start && route.data <= end);
-    const byDriver = new Map();
+const XLSX_STYLE = { header: 1, money: 2, date: 3, bold: 4, boldMoney: 5 };
 
-    weekRoutes.forEach((route) => {
-        const groupKey = `${route.driverId}|${route.empresa || ""}`;
-        const item = byDriver.get(groupKey) || { driverId: route.driverId, empresa: route.empresa || "-", saidas: 0, entregues: 0, retornados: 0, total: 0, routes: [] };
+function xlsxColumnName(index) {
+    let name = "";
+    let number = index + 1;
+    while (number > 0) {
+        const remainder = (number - 1) % 26;
+        name = String.fromCharCode(65 + remainder) + name;
+        number = Math.floor((number - 1) / 26);
+    }
+    return name;
+}
+
+function xlsxEscape(value) {
+    return String(value ?? "")
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+        .replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
+}
+
+function xlsxDateSerial(isoDate) {
+    const [year, month, day] = String(isoDate).split("-").map(Number);
+    return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(1899, 11, 30)) / 86400000);
+}
+
+function xlsxCell(input, columnIndex, rowIndex) {
+    const ref = `${xlsxColumnName(columnIndex)}${rowIndex + 1}`;
+    const cell = input !== null && typeof input === "object" ? input : { value: input };
+    const style = cell.style ? ` s="${XLSX_STYLE[cell.style]}"` : "";
+    const value = cell.value;
+    if (value === null || value === undefined || value === "") {
+        return style ? `<c r="${ref}"${style}/>` : "";
+    }
+    if (cell.style === "date") return `<c r="${ref}"${style}><v>${xlsxDateSerial(value)}</v></c>`;
+    if (typeof value === "number") return `<c r="${ref}"${style}><v>${value}</v></c>`;
+    return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${xlsxEscape(value)}</t></is></c>`;
+}
+
+function xlsxSheetXml(sheet) {
+    const columns = (sheet.widths || [])
+        .map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`)
+        .join("");
+    const rows = sheet.rows
+        .map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((cell, columnIndex) => xlsxCell(cell, columnIndex, rowIndex)).join("")}</row>`)
+        .join("");
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+        + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+        + (columns ? `<cols>${columns}</cols>` : "")
+        + `<sheetData>${rows}</sheetData></worksheet>`;
+}
+
+const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+    + `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;R$&quot; #,##0.00"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/></numFmts>`
+    + `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>`
+    + `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>`
+    + `<fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill></fills>`
+    + `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+    + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
+    + `<cellXfs count="6">`
+    + `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`
+    + `<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>`
+    + `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>`
+    + `<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>`
+    + `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>`
+    + `<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>`
+    + `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        table[n] = c >>> 0;
+    }
+    return table;
+})();
+
+function crc32(bytes) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function zipStore(files, mimeType) {
+    const encoder = new TextEncoder();
+    const u16 = (value) => [value & 255, (value >>> 8) & 255];
+    const u32 = (value) => [value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255];
+    const dosDate = ((2024 - 1980) << 9) | (1 << 5) | 1;
+    const chunks = [];
+    const central = [];
+    let offset = 0;
+
+    for (const file of files) {
+        const name = encoder.encode(file.name);
+        const data = encoder.encode(file.content);
+        const crc = crc32(data);
+        const header = new Uint8Array([
+            ...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(dosDate),
+            ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)
+        ]);
+        chunks.push(header, name, data);
+        central.push({ name, crc, size: data.length, offset });
+        offset += header.length + name.length + data.length;
+    }
+
+    const centralStart = offset;
+    for (const entry of central) {
+        const header = new Uint8Array([
+            ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(dosDate),
+            ...u32(entry.crc), ...u32(entry.size), ...u32(entry.size), ...u16(entry.name.length),
+            ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(entry.offset)
+        ]);
+        chunks.push(header, entry.name);
+        offset += header.length + entry.name.length;
+    }
+    chunks.push(new Uint8Array([
+        ...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length),
+        ...u32(offset - centralStart), ...u32(centralStart), ...u16(0)
+    ]));
+    return new Blob(chunks, { type: mimeType });
+}
+
+function buildXlsxBlob(sheets) {
+    const safeName = (name, index) => (String(name || `Planilha${index + 1}`).replace(/[\[\]:*?\/\\]/g, " ").slice(0, 31));
+    const files = [
+        {
+            name: "[Content_Types].xml",
+            content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+                + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
+                + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`
+                + `<Default Extension="xml" ContentType="application/xml"/>`
+                + `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>`
+                + sheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")
+                + `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`
+                + `</Types>`
+        },
+        {
+            name: "_rels/.rels",
+            content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+                + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+                + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>`
+                + `</Relationships>`
+        },
+        {
+            name: "xl/workbook.xml",
+            content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+                + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+                + `<sheets>${sheets.map((sheet, index) => `<sheet name="${xlsxEscape(safeName(sheet.name, index))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}</sheets>`
+                + `</workbook>`
+        },
+        {
+            name: "xl/_rels/workbook.xml.rels",
+            content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+                + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+                + sheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("")
+                + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`
+                + `</Relationships>`
+        },
+        { name: "xl/styles.xml", content: XLSX_STYLES },
+        ...sheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: xlsxSheetXml(sheet) }))
+    ];
+    return zipStore(files, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+function downloadXlsx(filename, sheets) {
+    const url = URL.createObjectURL(buildXlsxBlob(sheets));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function shiftDate(isoDate, days) {
+    const [year, month, day] = isoDate.split("-").map(Number);
+    const date = new Date(year, month - 1, day + days);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function pixCell(driver) {
+    return driver?.pixChave
+        ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
+        : "Sem chave cadastrada";
+}
+
+function weekRange() {
+    const end = document.querySelector("[data-week-date]")?.value || today;
+    return { start: shiftDate(end, -6), end };
+}
+
+function weekdayName(isoDate) {
+    const [year, month, day] = isoDate.split("-").map(Number);
+    const name = new Date(year, month - 1, day).toLocaleDateString("pt-BR", { weekday: "long" });
+    return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function weekData() {
+    const range = weekRange();
+    const compareText = (a, b) => String(a).localeCompare(String(b), "pt-BR", { sensitivity: "base" });
+    const routes = state.routes.filter((route) => (
+        route.status === "Fechado" && route.data >= range.start && route.data <= range.end
+    ));
+
+    const groups = new Map();
+    routes.forEach((route) => {
+        const key = `${route.driverId}|${route.empresa || ""}`;
+        const item = groups.get(key) || {
+            key, driverId: route.driverId, empresa: route.empresa || "-", dates: new Set(),
+            saidas: 0, entregues: 0, retornados: 0, total: 0
+        };
+        item.dates.add(route.data);
         item.saidas += Number(route.saida || 0);
         item.entregues += Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0));
         item.retornados += Number(route.retornados || 0);
         item.total += routeTotal(route);
-        item.routes.push(route);
-        byDriver.set(groupKey, item);
+        groups.set(key, item);
     });
 
-    setText('[data-week="delivered"]', weekRoutes.reduce((sum, route) => sum + Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)), 0));
-    setText('[data-week="returned"]', weekRoutes.reduce((sum, route) => sum + Number(route.retornados || 0), 0));
-    setText('[data-week="value"]', money(weekRoutes.reduce((sum, route) => sum + routeTotal(route), 0)));
-    setText('[data-week="drivers"]', new Set(weekRoutes.map((route) => route.driverId)).size);
+    const summary = [...groups.values()]
+        .map((item) => ({ ...item, driver: getDriver(item.driverId), dates: [...item.dates].sort() }))
+        .sort((a, b) => compareText(a.driver?.nome || "", b.driver?.nome || "") || compareText(a.empresa, b.empresa));
+    const detail = routes.slice().sort((a, b) => (
+        (a.data < b.data ? -1 : a.data > b.data ? 1 : 0)
+        || compareText(getDriver(a.driverId)?.nome || "", getDriver(b.driverId)?.nome || "")
+    ));
+
+    const days = [];
+    for (let offset = 0; offset < 7; offset++) {
+        const date = shiftDate(range.start, offset);
+        const dayRoutes = routes.filter((route) => route.data === date);
+        days.push({
+            date,
+            weekday: weekdayName(date),
+            saidas: dayRoutes.reduce((sum, route) => sum + Number(route.saida || 0), 0),
+            entregues: dayRoutes.reduce((sum, route) => sum + Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)), 0),
+            retornados: dayRoutes.reduce((sum, route) => sum + Number(route.retornados || 0), 0),
+            valor: dayRoutes.reduce((sum, route) => sum + routeTotal(route), 0)
+        });
+    }
+    return { range, routes, summary, detail, days };
+}
+
+function renderWeek() {
+    const { range, routes, summary, detail, days } = weekData();
+
+    setText("[data-week-period]", `${formatDate(range.start)} a ${formatDate(range.end)}`);
+    setText('[data-week="delivered"]', routes.reduce((sum, route) => sum + Number(route.entregues || 0), 0));
+    setText('[data-week="returned"]', routes.reduce((sum, route) => sum + Number(route.retornados || 0), 0));
+    setText('[data-week="value"]', money(routes.reduce((sum, route) => sum + routeTotal(route), 0)));
+    setText('[data-week="drivers"]', new Set(routes.map((route) => route.driverId)).size);
 
     const tbody = document.querySelector("[data-week-table]");
-    if (!tbody) return;
-
-    if (!byDriver.size) {
-        renderEmpty(tbody, 8, "Nenhum fechamento nesse periodo.");
-        return;
+    if (tbody) {
+        if (!summary.length) {
+            renderEmpty(tbody, 8, "Nenhum fechamento neste período.");
+        } else {
+            tbody.innerHTML = summary.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.driver?.nome || "Entregador removido")}</td>
+                    <td>${pixCell(item.driver)}</td>
+                    <td>${escapeHtml(item.empresa)}</td>
+                    <td>${item.dates.map(formatDate).join(", ")}</td>
+                    <td>${item.saidas}</td>
+                    <td>${item.entregues}</td>
+                    <td>${item.retornados}</td>
+                    <td>${money(item.total)}</td>
+                </tr>
+            `).join("");
+        }
     }
 
-    tbody.innerHTML = [...byDriver.values()].map((item) => {
-        const driver = getDriver(item.driverId);
-        return `
+    const daysBody = document.querySelector("[data-week-days-table]");
+    if (daysBody) {
+        const totalOf = (field) => days.reduce((sum, day) => sum + day[field], 0);
+        daysBody.innerHTML = days.map((day) => `
             <tr>
-                <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
-                <td>${escapeHtml(item.empresa)}</td>
-                <td>${item.routes.map((route) => formatDate(route.data)).sort().join(", ")}</td>
-                <td>${escapeHtml(getDriver(item.driverId)?.pixChave || "Sem chave cadastrada")}</td>
-                <td>${item.saidas}</td>
-                <td>${item.entregues}</td>
-                <td>${item.retornados}</td>
-                <td>${money(item.total)}</td>
+                <td>${formatDate(day.date)}</td>
+                <td>${day.weekday}</td>
+                <td>${day.saidas}</td>
+                <td>${day.entregues}</td>
+                <td>${day.retornados}</td>
+                <td>${money(day.valor)}</td>
+            </tr>
+        `).join("") + `
+            <tr>
+                <td><strong>Total</strong></td>
+                <td></td>
+                <td><strong>${totalOf("saidas")}</strong></td>
+                <td><strong>${totalOf("entregues")}</strong></td>
+                <td><strong>${totalOf("retornados")}</strong></td>
+                <td><strong>${money(totalOf("valor"))}</strong></td>
             </tr>
         `;
-    }).join("");
+    }
+
+    const detailBody = document.querySelector("[data-week-routes-table]");
+    if (detailBody) {
+        if (!detail.length) {
+            renderEmpty(detailBody, 9, "Nenhum fechamento neste período.");
+        } else {
+            detailBody.innerHTML = detail.map((route) => {
+                const driver = getDriver(route.driverId);
+                const isPaid = route.pagamento === "Pago";
+                return `
+                <tr>
+                    <td>${formatDate(route.data)}</td>
+                    <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
+                    <td>${pixCell(driver)}</td>
+                    <td>${escapeHtml(route.empresa || "-")}</td>
+                    <td>${route.saida}</td>
+                    <td>${Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))}</td>
+                    <td>${route.retornados || 0}</td>
+                    <td>${money(routeTotal(route))}</td>
+                    <td><span class="status ${isPaid ? "status-pago" : "status-pendente"}">${isPaid ? "Pago" : "Pendente"}</span></td>
+                </tr>`;
+            }).join("");
+        }
+    }
+}
+
+function dailyMatrix(summary, routes, days, pick) {
+    const dayHeader = (day) => `${day.date.slice(8)}/${day.date.slice(5, 7)} ${day.weekday.slice(0, 3).toLowerCase()}`;
+    const header = ["Entregador", "Empresa", ...days.map(dayHeader), "Total"]
+        .map((value) => ({ value, style: "header" }));
+    const rows = summary.map((item) => {
+        const values = days.map((day) => {
+            const items = routes.filter((route) => `${route.driverId}|${route.empresa || ""}` === item.key && route.data === day.date);
+            return items.length ? items.reduce((sum, route) => sum + pick(route), 0) : "";
+        });
+        const total = values.reduce((sum, value) => sum + (value === "" ? 0 : value), 0);
+        return [item.driver?.nome || "Entregador removido", item.empresa, ...values, { value: total, style: "bold" }];
+    });
+    const totals = days.map((_, index) => rows.reduce((sum, row) => sum + (row[index + 2] === "" ? 0 : row[index + 2]), 0));
+    return [
+        header,
+        ...rows,
+        [
+            { value: "Total", style: "bold" }, "",
+            ...totals.map((value) => ({ value, style: "bold" })),
+            { value: totals.reduce((sum, value) => sum + value, 0), style: "bold" }
+        ]
+    ];
+}
+
+function exportWeek() {
+    const { range, summary, detail, days } = weekData();
+    if (!detail.length) {
+        toast("Não há fechamentos neste período para exportar.");
+        return;
+    }
+    const header = (labels) => labels.map((value) => ({ value, style: "header" }));
+    const sum = (list, pick) => list.reduce((total, item) => total + pick(item), 0);
+
+    const summaryRows = [
+        header(["Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Datas das rotas", "Saídas", "Entregues", "Retornados", "Total (R$)"]),
+        ...summary.map((item) => [
+            item.driver?.nome || "Entregador removido",
+            item.driver?.pixTipo || "",
+            item.driver?.pixChave || "",
+            item.empresa,
+            item.dates.map(formatDate).join(", "),
+            item.saidas,
+            item.entregues,
+            item.retornados,
+            { value: Number(item.total.toFixed(2)), style: "money" }
+        ]),
+        [
+            { value: "Total", style: "bold" }, "", "", "", "",
+            { value: sum(summary, (item) => item.saidas), style: "bold" },
+            { value: sum(summary, (item) => item.entregues), style: "bold" },
+            { value: sum(summary, (item) => item.retornados), style: "bold" },
+            { value: Number(sum(summary, (item) => item.total).toFixed(2)), style: "boldMoney" }
+        ]
+    ];
+
+    const daysSum = (field) => days.reduce((total, day) => total + day[field], 0);
+    const daysRows = [
+        header(["Data", "Dia da semana", "Saídas", "Entregues", "Retornados", "Valor (R$)"]),
+        ...days.map((day) => [
+            { value: day.date, style: "date" },
+            day.weekday,
+            day.saidas,
+            day.entregues,
+            day.retornados,
+            { value: Number(day.valor.toFixed(2)), style: "money" }
+        ]),
+        [
+            { value: "Total", style: "bold" }, "",
+            { value: daysSum("saidas"), style: "bold" },
+            { value: daysSum("entregues"), style: "bold" },
+            { value: daysSum("retornados"), style: "bold" },
+            { value: Number(daysSum("valor").toFixed(2)), style: "boldMoney" }
+        ]
+    ];
+
+    const detailRows = [
+        header(["Data", "Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Saída", "Entregues", "Retornados", "Desconto (R$)", "Valor (R$)", "Pagamento"]),
+        ...detail.map((route) => {
+            const driver = getDriver(route.driverId);
+            return [
+                { value: route.data, style: "date" },
+                driver?.nome || "Entregador removido",
+                driver?.pixTipo || "",
+                driver?.pixChave || "",
+                route.empresa || "",
+                Number(route.saida || 0),
+                Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)),
+                Number(route.retornados || 0),
+                { value: Number(Number(route.desconto || 0).toFixed(2)), style: "money" },
+                { value: Number(routeTotal(route).toFixed(2)), style: "money" },
+                route.pagamento === "Pago" ? "Pago" : "Pendente"
+            ];
+        })
+    ];
+
+    const delivered = (route) => Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0));
+    const dispatched = (route) => Number(route.saida || 0);
+
+    downloadXlsx(`fechamento-semanal-${range.start}-a-${range.end}.xlsx`, [
+        { name: "Resumo por entregador", widths: [28, 18, 30, 24, 44, 10, 11, 12, 14], rows: summaryRows },
+        { name: "Total por dia", widths: [12, 16, 10, 11, 12, 14], rows: daysRows },
+        { name: "Entregues por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, delivered) },
+        { name: "Saidas por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, dispatched) },
+        { name: "Rotas", widths: [12, 28, 18, 30, 24, 9, 11, 12, 14, 14, 12], rows: detailRows }
+    ]);
+}
+
+function paymentFilter() {
+    return {
+        from: document.querySelector("[data-pay-from]")?.value || "",
+        to: document.querySelector("[data-pay-to]")?.value || "",
+        status: document.querySelector("[data-pay-status]")?.value || ""
+    };
+}
+
+function updatePaymentSelection() {
+    const boxes = [...document.querySelectorAll("[data-select-route]")];
+    const checked = boxes.filter((box) => box.checked);
+    const total = checked.reduce((sum, box) => {
+        const route = state.routes.find((item) => item.id === box.value);
+        return sum + (route ? routeTotal(route) : 0);
+    }, 0);
+    setText("[data-pay-selected]", `${checked.length} selecionada(s) - ${money(total)}`);
+    const selectAll = document.querySelector("[data-pay-select-all]");
+    if (selectAll) {
+        selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
+        selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    }
 }
 
 function renderPayments() {
     const tbody = document.querySelector("[data-payments-table]");
     if (!tbody) return;
 
-    const allClosedRoutes = state.routes.filter((route) => route.status === "Fechado");
-    const start = document.querySelector("[data-payment-start]")?.value || "";
-    const end = document.querySelector("[data-payment-end]")?.value || "";
-    const closedRoutes = allClosedRoutes.filter((route) => (!start || route.data >= start) && (!end || route.data <= end));
+    const { from, to, status } = paymentFilter();
+    const closedRoutes = state.routes.filter((route) => (
+        route.status === "Fechado"
+        && (!from || route.data >= from)
+        && (!to || route.data <= to)
+    ));
     const pending = closedRoutes.filter((route) => route.pagamento !== "Pago");
     const paid = closedRoutes.filter((route) => route.pagamento === "Pago");
 
     setText('[data-payments="pending"]', money(pending.reduce((sum, route) => sum + routeTotal(route), 0)));
     setText('[data-payments="paid"]', money(paid.reduce((sum, route) => sum + routeTotal(route), 0)));
-    setText("[data-payment-count]", `${closedRoutes.length} itens no período`);
 
-    if (!closedRoutes.length) {
-        renderEmpty(tbody, 7, "Nenhum fechamento disponivel para pagamento.");
+    const rows = closedRoutes
+        .filter((route) => !status || (status === "pago") === (route.pagamento === "Pago"))
+        .map((route, index) => ({ route, index }))
+        .sort((a, b) => (a.route.data < b.route.data ? 1 : a.route.data > b.route.data ? -1 : 0) || b.index - a.index)
+        .map(({ route }) => route);
+
+    setText("[data-payment-count]", `${rows.length} itens`);
+
+    if (!rows.length) {
+        renderEmpty(tbody, 7, "Nenhum fechamento encontrado para este filtro.");
+        updatePaymentSelection();
         return;
     }
 
-    tbody.innerHTML = closedRoutes.slice().reverse().map((route) => {
+    tbody.innerHTML = rows.map((route) => {
         const driver = getDriver(route.driverId);
         const isPaid = route.pagamento === "Pago";
         return `
             <tr>
-                <td><input type="checkbox" data-payment-select value="${escapeHtml(route.id)}" aria-label="Selecionar pagamento de ${escapeHtml(driver?.nome || "entregador")}"></td>
+                <td><input type="checkbox" data-select-route value="${escapeHtml(route.id)}" aria-label="Selecionar saída"></td>
                 <td>${formatDate(route.data)}</td>
                 <td>${escapeHtml(driver?.nome || "Entregador removido")}</td>
-                <td>${driver?.pixChave
-                    ? `<span class="pix-type">${escapeHtml(driver.pixTipo || "Chave")}</span><span class="pix-key">${escapeHtml(driver.pixChave)}</span>`
-                    : "Sem chave cadastrada"}</td>
+                <td>${pixCell(driver)}</td>
                 <td>${money(routeTotal(route))}</td>
-                <td><span class="status ${isPaid ? "status-pago" : "status-pendente"}">${isPaid ? "Pago" : "Pendente"}</span></td>
+                <td><span class="status ${isPaid ? "status-pago" : "status-pendente"}">${isPaid ? "Pago" : "Pendente"}</span>${isPaid && route.dataPagamento ? `<span class="pix-type">em ${formatDate(route.dataPagamento)}</span>` : ""}</td>
                 <td class="table-actions">
-                    <button class="btn btn-small ${isPaid ? "btn-muted" : "btn-primary"}" data-pay-route="${route.id}" type="button">
+                    <button class="btn btn-small ${isPaid ? "btn-muted" : "btn-primary"}" data-pay-route="${escapeHtml(route.id)}" type="button">
                         ${isPaid ? "Desfazer" : "Marcar pago"}
                     </button>
                 </td>
             </tr>
         `;
     }).join("");
+    updatePaymentSelection();
 }
 
 function fortnightRange() {
@@ -728,10 +1152,6 @@ function renderSettings() {
     form.valorCarro.value = state.settings.valoresVeiculo.carro;
     form.valorVan.value = state.settings.valoresVeiculo.van;
     form.empresas.value = (state.settings.empresas || []).join("\n");
-    const zeroStockButton = document.querySelector("[data-zero-stock]");
-    if (zeroStockButton) zeroStockButton.hidden = state.role !== "admin";
-    const stockDateInput = document.querySelector("[data-zero-stock-date]");
-    if (stockDateInput) stockDateInput.value = today;
 }
 
 function renderCompanyStock(date) {
@@ -870,6 +1290,19 @@ function updateClosurePreview(closeForm) {
     closeForm.elements.namedItem("desconto").max = route ? delivered * Number(route.valorPacote || 0) : 0;
 }
 
+const PRIVATE_DRIVER_FIELDS = ["cpf", "cnh", "endereco", "email", "pixTipo", "pixChave", "arquivoIdentidade", "arquivoResidencia"];
+
+function setDriverPrivateFields(driverForm, visible) {
+    for (const name of PRIVATE_DRIVER_FIELDS) {
+        const field = driverForm.elements.namedItem(name);
+        if (!field) continue;
+        if (field.dataset.wasRequired === undefined) field.dataset.wasRequired = field.required ? "1" : "0";
+        const label = field.closest("label");
+        if (label) label.style.display = visible ? "" : "none";
+        field.required = visible && field.dataset.wasRequired === "1";
+    }
+}
+
 const DOCUMENT_FIELDS = [
     ["identidade", "docIdentidade", "arquivoIdentidade"],
     ["residencia", "docResidencia", "arquivoResidencia"]
@@ -971,6 +1404,7 @@ function resetDriverForm(driverForm) {
     driverForm.querySelector("[data-driver-submit]").textContent = "Cadastrar";
     driverForm.querySelector("[data-driver-cancel]").hidden = true;
     updateDocumentHints(driverForm, null);
+    setDriverPrivateFields(driverForm, true);
 }
 
 function startDriverEdit(driverForm, driver) {
@@ -989,6 +1423,7 @@ function startDriverEdit(driverForm, driver) {
     driverForm.querySelector("[data-driver-submit]").textContent = "Salvar alteracoes";
     driverForm.querySelector("[data-driver-cancel]").hidden = false;
     updateDocumentHints(driverForm, driver);
+    setDriverPrivateFields(driverForm, state.role !== "operador");
     driverForm.scrollIntoView({ behavior: "smooth", block: "start" });
     driverForm.elements.namedItem("nome").focus({ preventScroll: true });
 }
@@ -1034,20 +1469,72 @@ function reportCells(summary) {
         <td>${summary.open}</td>`;
 }
 
+function fortnightOf(isoDate) {
+    const [year, month, day] = isoDate.split("-").map(Number);
+    const prefix = isoDate.slice(0, 7);
+    if (day <= 15) return { start: `${prefix}-01`, end: `${prefix}-15` };
+    const lastDay = new Date(year, month, 0).getDate();
+    return { start: `${prefix}-16`, end: `${prefix}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function performanceLabel(routes) {
+    const summary = summarizeReport(routes);
+    return percentLabel(summary.delivered, summary.delivered + summary.failed);
+}
+
+function renderPerformance(date) {
+    if (!document.querySelector("[data-perf]")) return;
+
+    const periods = {
+        day: { start: date, end: date },
+        week: { start: shiftDate(date, -6), end: date },
+        fortnight: fortnightOf(date)
+    };
+    const inPeriod = (route, period) => route.data >= period.start && route.data <= period.end;
+
+    for (const [key, period] of Object.entries(periods)) {
+        const summary = summarizeReport(state.routes.filter((route) => inPeriod(route, period)));
+        setText(`[data-perf="${key}"]`, percentLabel(summary.delivered, summary.delivered + summary.failed));
+        setText(`[data-perf-detail="${key}"]`, `${summary.delivered} entregues e ${summary.failed} insucessos`
+            + (key === "day" ? "" : ` (${formatDate(period.start)} a ${formatDate(period.end)})`));
+    }
+
+    const scope = state.routes.filter((route) => inPeriod(route, periods.week) || inPeriod(route, periods.fortnight));
+    const byName = (a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+    const perfRow = (name, items) => `
+        <tr>
+            <td>${escapeHtml(name)}</td>
+            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.day)))}</td>
+            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.week)))}</td>
+            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.fortnight)))}</td>
+        </tr>`;
+
+    const companyBody = document.querySelector("[data-perf-company-table]");
+    if (companyBody) {
+        const groups = [...groupRoutes(scope, (route) => route.empresa || "Sem empresa").entries()]
+            .map(([name, items]) => ({ name, items }))
+            .sort(byName);
+        if (!groups.length) renderEmpty(companyBody, 4, "Nenhuma saída no período.");
+        else companyBody.innerHTML = groups.map((group) => perfRow(group.name, group.items)).join("");
+    }
+
+    const driverBody = document.querySelector("[data-perf-driver-table]");
+    if (driverBody) {
+        const groups = [...groupRoutes(scope, (route) => route.driverId).entries()]
+            .map(([driverId, items]) => ({ name: getDriver(driverId)?.nome || "Entregador removido", items }))
+            .sort(byName);
+        if (!groups.length) renderEmpty(driverBody, 4, "Nenhuma saída no período.");
+        else driverBody.innerHTML = groups.map((group) => perfRow(group.name, group.items)).join("");
+    }
+}
+
 function renderDailyReport() {
     const dateInput = document.querySelector("[data-report-date]");
     if (!dateInput) return;
     const date = dateInput.value || today;
+    renderPerformance(date);
     const routes = state.routes.filter((route) => route.data === date);
     const total = summarizeReport(routes);
-    const periodPerformance = (days) => {
-        const startDate = addCalendarDays(date, -(days - 1));
-        const summary = summarizeReport(state.routes.filter((route) => route.data >= startDate && route.data <= date));
-        return percentLabel(summary.delivered, summary.delivered + summary.failed);
-    };
-    setText('[data-performance="daily"]', percentLabel(total.delivered, total.delivered + total.failed));
-    setText('[data-performance="weekly"]', periodPerformance(7));
-    setText('[data-performance="fortnight"]', periodPerformance(15));
 
     setText("[data-report-title]", `Relatório diário - ${formatDate(date)}`);
     setText('[data-report="out"]', total.out);
@@ -1314,6 +1801,11 @@ function setupForms() {
         reportDate.value = today;
         reportDate.addEventListener("change", renderDailyReport);
     }
+    const weekDate = document.querySelector("[data-week-date]");
+    if (weekDate) {
+        weekDate.value = today;
+        weekDate.addEventListener("change", renderWeek);
+    }
     const printReport = document.querySelector("[data-print-report]");
     if (printReport) printReport.addEventListener("click", () => window.print());
 
@@ -1451,8 +1943,28 @@ function setupForms() {
 
             const submitButton = driverForm.querySelector("[data-driver-submit]");
             if (state.role === "operador" && driverId) {
-                toast("Operadores só podem cadastrar novos entregadores.");
-                resetDriverForm(driverForm);
+                submitButton.disabled = true;
+                try {
+                    const savedDriver = await window.rmsSupabase.updateDriver(driverId, {
+                        nome: String(data.nome || "").trim(),
+                        telefone: String(data.telefone || "").trim(),
+                        veiculo: data.veiculo,
+                        status: data.status
+                    });
+                    const driverIndex = state.drivers.findIndex((item) => item.id === driverId);
+                    if (driverIndex >= 0) state.drivers[driverIndex] = savedDriver;
+                    resetDriverForm(driverForm);
+                    renderDrivers();
+                    fillDriverSelects();
+                    toast("Cadastro atualizado.");
+                } catch (error) {
+                    console.error("Falha ao editar entregador:", error);
+                    toast(error.code === "P0001"
+                        ? error.message
+                        : "Não foi possível salvar a alteração. Confira os dados e tente novamente.", 6000);
+                } finally {
+                    submitButton.disabled = false;
+                }
                 return;
             }
 
@@ -1477,16 +1989,7 @@ function setupForms() {
 
             let succeeded = true;
             try {
-                if (state.role === "operador" && existingDriver) {
-                    const updatedDriver = await window.rmsSupabase.updateDriver({
-                        ...existingDriver, ...data, ...documentPaths, id: targetId
-                    });
-                    Object.assign(existingDriver, updatedDriver);
-                    if (replacedPaths.length) {
-                        window.rmsSupabase.removeDriverDocuments(replacedPaths)
-                            .catch((error) => console.error("Falha ao remover documento antigo:", error));
-                    }
-                } else if (state.role === "operador") {
+                if (state.role === "operador") {
                     const savedDriver = await window.rmsSupabase.registerDriver({ id: targetId, ...data, ...documentPaths });
                     state.drivers.push(savedDriver);
                 } else if (existingDriver) {
@@ -1568,10 +2071,6 @@ function setupForms() {
     const closeForm = document.querySelector('[data-form="close-route"]');
     if (closeForm) {
         closeForm.addEventListener("input", () => updateClosurePreview(closeForm));
-        closeForm.querySelector("[data-route-filter]")?.addEventListener("input", () => {
-            fillRouteSelects();
-            updateClosurePreview(closeForm);
-        });
         closeForm.elements.namedItem("routeId").addEventListener("change", () => updateClosurePreview(closeForm));
         closeForm.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -1706,7 +2205,7 @@ function setupForms() {
 }
 
 function setupActions() {
-    document.addEventListener("click", async (event) => {
+    document.addEventListener("click", (event) => {
         if (event.target.closest("[data-logout]")) {
             window.rmsSupabase.signOut();
             window.location.href = "index.html";
@@ -1730,23 +2229,11 @@ function setupActions() {
 
         const editDriverButton = event.target.closest("[data-edit-driver]");
         if (editDriverButton) {
-            let driver = getDriver(editDriverButton.dataset.editDriver);
-            if (state.role === "operador" && driver) {
-                editDriverButton.disabled = true;
-                try {
-                    driver = { ...driver, ...await window.rmsSupabase.getDriverDetails(driver.id) };
-                    Object.assign(getDriver(driver.id), driver);
-                } catch (error) {
-                    console.error("Falha ao carregar dados do entregador:", error);
-                    toast("Nao foi possivel carregar os dados para edicao.");
-                    editDriverButton.disabled = false;
-                    return;
-                }
-                editDriverButton.disabled = false;
-            }
+            const driver = getDriver(editDriverButton.dataset.editDriver);
             const driverForm = document.querySelector('[data-form="driver"]');
             if (driver && driverForm) startDriverEdit(driverForm, driver);
         }
+
         const openDocButton = event.target.closest("[data-open-doc]");
         if (openDocButton) {
             const driver = getDriver(openDocButton.dataset.openDoc);
@@ -1764,20 +2251,29 @@ function setupActions() {
         if (toggleDriverButton) {
             const driver = getDriver(toggleDriverButton.dataset.toggleDriver);
             if (driver) {
-                const previousStatus = driver.status;
-                driver.status = previousStatus === "Ativo" ? "Inativo" : "Ativo";
-                const saved = state.role === "operador"
-                    ? await window.rmsSupabase.getDriverDetails(driver.id)
-                        .then((details) => window.rmsSupabase.updateDriver({ ...driver, ...details, status: driver.status }))
-                        .then((updated) => { Object.assign(driver, updated); return true; })
-                        .catch((error) => {
+                const nextStatus = driver.status === "Ativo" ? "Inativo" : "Ativo";
+                if (state.role === "operador") {
+                    window.rmsSupabase.updateDriver(driver.id, {
+                        nome: driver.nome,
+                        telefone: driver.telefone || "",
+                        veiculo: driver.veiculo,
+                        status: nextStatus
+                    }).then((savedDriver) => {
+                        const driverIndex = state.drivers.findIndex((item) => item.id === driver.id);
+                        if (driverIndex >= 0) state.drivers[driverIndex] = savedDriver;
+                        renderDrivers();
+                        fillDriverSelects();
+                        toast("Status atualizado.");
+                    }).catch((error) => {
                         console.error("Falha ao atualizar status:", error);
-                        return false;
-                    })
-                    : await saveData(state);
-                if (!saved) driver.status = previousStatus;
-                renderDrivers();
-                toast(saved ? "Status atualizado." : "Nao foi possivel atualizar o status.");
+                        toast("Não foi possível atualizar o status.", 6000);
+                    });
+                } else {
+                    driver.status = nextStatus;
+                    saveData(state);
+                    renderDrivers();
+                    toast("Status atualizado.");
+                }
             }
         }
 
@@ -1806,22 +2302,6 @@ function setupActions() {
             if (route) startRouteEdit(route);
         }
 
-        const deleteRouteButton = event.target.closest("[data-delete-route]");
-        if (deleteRouteButton) {
-            const route = state.routes.find((item) => item.id === deleteRouteButton.dataset.deleteRoute);
-            if (route && window.confirm(`Excluir a rota de ${formatDate(route.data)}? Esta ação não pode ser desfeita.`)) {
-                try {
-                    if (window.rmsSupabase.configured) await window.rmsSupabase.deleteRoute(route.id);
-                    state.routes = state.routes.filter((item) => item.id !== route.id);
-                    renderHistory(document.querySelector("[data-search-history]")?.value || "");
-                    toast("Rota excluída.");
-                } catch (error) {
-                    console.error("Falha ao excluir rota:", error);
-                    toast("Não foi possível excluir a rota. Verifique se há dados vinculados.");
-                }
-            }
-        }
-
         if (event.target.closest("[data-route-edit-cancel]")) closeRouteEdit();
 
         const editEmployeeButton = event.target.closest("[data-edit-employee]");
@@ -1847,6 +2327,59 @@ function setupActions() {
             }
         }
 
+        const deleteRouteButton = event.target.closest("[data-delete-route]");
+        if (deleteRouteButton) {
+            const route = state.routes.find((item) => item.id === deleteRouteButton.dataset.deleteRoute);
+            if (route) {
+                const driver = getDriver(route.driverId);
+                const hasReturn = route.status === "Fechado" && Number(route.retornados || 0) > 0;
+                const message = `Excluir a saída de ${formatDate(route.data)} de ${driver?.nome || "entregador removido"} `
+                    + `(${route.empresa || "sem empresa"}, ${route.saida} pacote(s))?`
+                    + (hasReturn ? "\n\nA entrada de retorno gerada por ela também será removida." : "")
+                    + "\n\nEsta ação não pode ser desfeita.";
+                if (window.confirm(message)) removeRoute(route.id);
+            }
+        }
+
+        if (event.target.closest("[data-export-week]")) exportWeek();
+
+        if (event.target.closest("[data-pay-clear]")) {
+            document.querySelectorAll("[data-pay-from], [data-pay-to], [data-pay-status]").forEach((field) => { field.value = ""; });
+            renderPayments();
+        }
+
+        const markButton = event.target.closest("[data-pay-mark]");
+        if (markButton) {
+            const target = markButton.dataset.payMark;
+            const selectedIds = [...document.querySelectorAll("[data-select-route]:checked")].map((box) => box.value);
+            const routes = selectedIds
+                .map((id) => state.routes.find((route) => route.id === id))
+                .filter((route) => route && (route.pagamento === "Pago") !== (target === "pago"));
+            if (!selectedIds.length) {
+                toast("Selecione ao menos uma saída.");
+            } else if (!routes.length) {
+                toast(target === "pago" ? "As saídas selecionadas já estão pagas." : "As saídas selecionadas já estão pendentes.");
+            } else {
+                const total = routes.reduce((sum, route) => sum + routeTotal(route), 0);
+                const message = `Marcar ${routes.length} saída(s), no total de ${money(total)}, como ${target === "pago" ? "pagas" : "pendentes"}?`;
+                if (window.confirm(message)) {
+                    routes.forEach((route) => {
+                        if (target === "pago") {
+                            route.pagamento = "Pago";
+                            route.dataPagamento = today;
+                        } else {
+                            route.pagamento = "Pendente";
+                            delete route.dataPagamento;
+                        }
+                    });
+                    saveData(state);
+                    renderPayments();
+                    renderFortnight();
+                    toast(target === "pago" ? "Pagamentos marcados como pagos." : "Pagamentos desfeitos.");
+                }
+            }
+        }
+
         const payButton = event.target.closest("[data-pay-route]");
         if (payButton) {
             const route = state.routes.find((item) => item.id === payButton.dataset.payRoute);
@@ -1866,39 +2399,6 @@ function setupActions() {
         }
 
         const resetButton = event.target.closest("[data-reset-system]");
-        const zeroStockButton = event.target.closest("[data-zero-stock]");
-        if (zeroStockButton) {
-            if (state.role !== "admin") return toast("Somente administradores podem zerar o estoque.");
-            const stockDateInput = document.querySelector("[data-zero-stock-date]");
-            const selectedDate = stockDateInput?.value;
-            if (!selectedDate) return toast("Selecione a data do estoque.");
-            if (!window.confirm(`Zerar o estoque de ${formatDate(selectedDate)}? As rotas atribuidas serao mantidas.`)) return;
-
-            const companies = [...new Set([
-                ...(state.settings.empresas || []),
-                ...state.entradasGalpao.filter((entry) => entry.data === selectedDate).map((entry) => entry.empresa || ""),
-                ...state.routes.filter((route) => route.data === selectedDate).map((route) => route.empresa || "")
-            ])];
-            const adjustments = companies
-                .map((empresa) => ({ empresa, quantidade: Math.max(0, dailyStock(selectedDate, empresa).available) }))
-                .filter((item) => item.quantidade > 0)
-                .map((item) => ({ id: makeId(), data: selectedDate, empresa: item.empresa, quantidade: item.quantidade }));
-            if (!adjustments.length) return toast("O estoque nessa data ja esta zerado.");
-
-            const previous = state.settings.stockAdjustments || [];
-            state.settings.stockAdjustments = [...previous, ...adjustments];
-            zeroStockButton.disabled = true;
-            const saved = await saveData(state);
-            if (!saved) state.settings.stockAdjustments = previous;
-            else {
-                renderWarehouse();
-                renderDashboard();
-                toast("Estoque zerado nessa data. As rotas foram mantidas.");
-            }
-            zeroStockButton.disabled = false;
-            return;
-        }
-
         if (resetButton && confirm("Deseja apagar todos os dados do sistema?")) {
             window.rmsSupabase.clearBusinessData().then(() => {
                 window.location.href = "index.html";
@@ -1925,57 +2425,25 @@ function setupActions() {
     if (search) {
         search.addEventListener("input", () => renderHistory(search.value));
     }
-    const historySort = document.querySelector("[data-sort-history]");
-    if (historySort) historySort.addEventListener("change", () => renderHistory(search?.value || ""));
 
-    ["[data-payment-start]", "[data-payment-end]"].forEach((selector) => {
-        const input = document.querySelector(selector);
-        if (input) input.addEventListener("change", renderPayments);
+    const sortHistory = document.querySelector("[data-sort-history]");
+    if (sortHistory) {
+        sortHistory.addEventListener("change", () => renderHistory(search ? search.value : ""));
+    }
+
+    ["[data-pay-from]", "[data-pay-to]", "[data-pay-status]"].forEach((selector) => {
+        const field = document.querySelector(selector);
+        if (field) field.addEventListener("change", renderPayments);
     });
-    const selectAllPayments = document.querySelector("[data-payment-select-all]");
-    if (selectAllPayments) selectAllPayments.addEventListener("change", () => {
-        document.querySelectorAll("[data-payment-select]").forEach((checkbox) => { checkbox.checked = selectAllPayments.checked; });
-    });
-    const applyPayments = document.querySelector("[data-payment-bulk-apply]");
-    if (applyPayments) applyPayments.addEventListener("click", async () => {
-        const selected = [...document.querySelectorAll("[data-payment-select]:checked")].map((box) => box.value);
-        if (!selected.length) return toast("Selecione ao menos um fechamento.");
-        const paid = document.querySelector("[data-payment-bulk-status]").value === "Pago";
-        for (const id of selected) {
-            const route = state.routes.find((item) => item.id === id);
-            if (!route) continue;
-            route.pagamento = paid ? "Pago" : "Pendente";
-            if (paid) route.dataPagamento = today;
-            else delete route.dataPagamento;
+
+    document.addEventListener("change", (event) => {
+        if (event.target.matches("[data-pay-select-all]")) {
+            document.querySelectorAll("[data-select-route]").forEach((box) => { box.checked = event.target.checked; });
+            updatePaymentSelection();
+        } else if (event.target.matches("[data-select-route]")) {
+            updatePaymentSelection();
         }
-        await saveData(state);
-        renderPayments();
-        renderFortnight();
-        toast("Pagamentos atualizados.");
     });
-    const weekStartInput = document.querySelector("[data-week-start]");
-    const weekEndInput = document.querySelector("[data-week-end]");
-    if (weekStartInput) weekStartInput.addEventListener("change", renderWeek);
-    if (weekEndInput) weekEndInput.addEventListener("change", renderWeek);
-    const exportWeek = document.querySelector("[data-export-week]");
-    if (exportWeek) exportWeek.addEventListener("click", exportWeekReport);
-}
-
-function exportWeekReport() {
-    const rows = [["Entregador", "Empresa", "Datas das rotas", "Chave Pix", "Saídas", "Entregues", "Retornados", "Total"]];
-    const groups = new Map();
-    const { start, end } = getSelectedWeekRange();
-    state.routes.filter((route) => route.status === "Fechado" && route.data >= start && route.data <= end).forEach((route) => {
-        const key = `${route.driverId}|${route.empresa || ""}`;
-        const item = groups.get(key) || { routes: [], saidas: 0, entregues: 0, retornados: 0, total: 0, driverId: route.driverId, empresa: route.empresa || "-" };
-        item.routes.push(route); item.saidas += Number(route.saida || 0); item.entregues += Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)); item.retornados += Number(route.retornados || 0); item.total += routeTotal(route); groups.set(key, item);
-    });
-    groups.forEach((item) => rows.push([getDriver(item.driverId)?.nome || "Entregador removido", item.empresa, [...new Set(item.routes.map((route) => formatDate(route.data)))].sort().join(", "), getDriver(item.driverId)?.pixChave || "Sem chave cadastrada", item.saidas, item.entregues, item.retornados, Number(item.total.toFixed(2))]));
-    const xml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
-    const body = rows.map((row) => `<Row>${row.map((value, i) => `<Cell><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${xml(value)}</Data></Cell>`).join("")}</Row>`).join("");
-    const workbook = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Fechamento semanal"><Table>${body}</Table></Worksheet></Workbook>`;
-    const url = URL.createObjectURL(new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = url; link.download = "fechamento-semanal.xls"; link.click(); URL.revokeObjectURL(url);
 }
 
 function exportHistory() {
