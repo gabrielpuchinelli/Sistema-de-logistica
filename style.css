@@ -40,7 +40,7 @@ button,
     cursor: pointer;
 }
 
-button[hidden] {
+[hidden] {
     display: none;
 }
 

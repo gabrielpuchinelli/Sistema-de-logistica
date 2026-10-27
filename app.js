@@ -908,15 +908,14 @@ function dailyMatrix(summary, routes, days, pick) {
 function exportWeek() {
     const { range, summary, detail, days } = weekData();
     if (!detail.length) {
-        toast("Não há fechamentos neste período para exportar.");
+        toast("N\u00e3o h\u00e1 fechamentos neste per\u00edodo para exportar.");
         return;
     }
     const header = (labels) => labels.map((value) => ({ value, style: "header" }));
     const sum = (list, pick) => list.reduce((total, item) => total + pick(item), 0);
-
     const dailyHeaders = days.map((day) => `Pacotes ${day.date.slice(8)}/${day.date.slice(5, 7)}`);
     const summaryRows = [
-        header(["Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Datas das rotas", ...dailyHeaders, "Saídas no período", "Entregues", "Retornados", "Total (R$)"]),
+        header(["Nome do entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", ...dailyHeaders, "Total de pacotes", "Pacotes entregues", "Pacotes retornados", "Valor total (R$)"]),
         ...summary.map((item) => {
             const itemRoutes = detail.filter((route) => `${route.driverId}|${route.empresa || ""}` === item.key);
             const dailyPackages = days.map((day) => itemRoutes
@@ -927,7 +926,6 @@ function exportWeek() {
                 item.driver?.pixTipo || "",
                 item.driver?.pixChave || "",
                 item.empresa,
-                item.dates.map(formatDate).join(", "),
                 ...dailyPackages,
                 item.saidas,
                 item.entregues,
@@ -936,7 +934,7 @@ function exportWeek() {
             ];
         }),
         [
-            { value: "Total", style: "bold" }, "", "", "", "",
+            { value: "Total", style: "bold" }, "", "", "",
             ...days.map((day) => ({ value: day.saidas, style: "bold" })),
             { value: sum(summary, (item) => item.saidas), style: "bold" },
             { value: sum(summary, (item) => item.entregues), style: "bold" },
@@ -944,58 +942,10 @@ function exportWeek() {
             { value: Number(sum(summary, (item) => item.total).toFixed(2)), style: "boldMoney" }
         ]
     ];
-    const daysSum = (field) => days.reduce((total, day) => total + day[field], 0);
-    const daysRows = [
-        header(["Data", "Dia da semana", "Saídas", "Entregues", "Retornados", "Valor (R$)"]),
-        ...days.map((day) => [
-            { value: day.date, style: "date" },
-            day.weekday,
-            day.saidas,
-            day.entregues,
-            day.retornados,
-            { value: Number(day.valor.toFixed(2)), style: "money" }
-        ]),
-        [
-            { value: "Total", style: "bold" }, "",
-            { value: daysSum("saidas"), style: "bold" },
-            { value: daysSum("entregues"), style: "bold" },
-            { value: daysSum("retornados"), style: "bold" },
-            { value: Number(daysSum("valor").toFixed(2)), style: "boldMoney" }
-        ]
-    ];
-
-    const detailRows = [
-        header(["Data", "Entregador", "Tipo da chave Pix", "Chave Pix", "Empresa", "Saída", "Entregues", "Retornados", "Desconto (R$)", "Valor (R$)", "Pagamento"]),
-        ...detail.map((route) => {
-            const driver = getDriver(route.driverId);
-            return [
-                { value: route.data, style: "date" },
-                driver?.nome || "Entregador removido",
-                driver?.pixTipo || "",
-                driver?.pixChave || "",
-                route.empresa || "",
-                Number(route.saida || 0),
-                Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0)),
-                Number(route.retornados || 0),
-                { value: Number(Number(route.desconto || 0).toFixed(2)), style: "money" },
-                { value: Number(routeTotal(route).toFixed(2)), style: "money" },
-                route.pagamento === "Pago" ? "Pago" : "Pendente"
-            ];
-        })
-    ];
-
-    const delivered = (route) => Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0));
-    const dispatched = (route) => Number(route.saida || 0);
-
     downloadXlsx(`fechamento-semanal-${range.start}-a-${range.end}.xlsx`, [
-        { name: "Resumo por entregador", widths: [28, 18, 30, 24, 44, ...days.map(() => 13), 14, 11, 12, 14], rows: summaryRows },
-        { name: "Total por dia", widths: [12, 16, 10, 11, 12, 14], rows: daysRows },
-        { name: "Entregues por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, delivered) },
-        { name: "Saidas por dia", widths: [28, 24, ...days.map(() => 11), 11], rows: dailyMatrix(summary, detail, days, dispatched) },
-        { name: "Rotas", widths: [12, 28, 18, 30, 24, 9, 11, 12, 14, 14, 12], rows: detailRows }
+        { name: "Resumo por entregador", widths: [28, 18, 30, 24, ...days.map(() => 13), 14, 16, 17, 16], rows: summaryRows }
     ]);
 }
-
 function paymentFilter() {
     return {
         from: document.querySelector("[data-pay-from]")?.value || "",
@@ -1829,9 +1779,14 @@ function setupForms() {
         weekStart.value = selectedRange.start;
         weekEnd.value = selectedRange.end;
         const updateWeek = (changedInput) => {
-            if (weekStart.value > weekEnd.value) {
-                if (changedInput === weekStart) weekEnd.value = weekStart.value;
-                else weekStart.value = weekEnd.value;
+            if (changedInput === weekStart && weekStart.value) {
+                weekEnd.value = shiftDate(weekStart.value, 6);
+            } else if (changedInput === weekEnd && weekEnd.value) {
+                weekStart.value = shiftDate(weekEnd.value, -6);
+            } else {
+                const range = weekRange();
+                weekStart.value = range.start;
+                weekEnd.value = range.end;
             }
             renderWeek();
         };
