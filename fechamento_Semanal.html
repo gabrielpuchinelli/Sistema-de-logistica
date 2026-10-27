@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -16,16 +16,23 @@
         <header class="topbar">
             <div>
                 <h1>Fechamento semanal</h1>
-                <p>Consolidado por entregador</p>
+                <p>Consolidado por entregador, com as datas das rotas e a chave Pix</p>
             </div>
             <div class="usuario" data-user>Operador</div>
         </header>
+
+        <section class="filters">
+            <label>De<input type="date" data-week-start></label>
+            <label>Até<input type="date" data-week-end></label>
+            <strong data-week-period></strong>
+            <button class="btn btn-secondary" data-export-week type="button">Exportar Excel</button>
+        </section>
 
         <section class="cards">
             <article class="card">
                 <h3>Entregas fechadas</h3>
                 <div class="numero" data-week="delivered">0</div>
-                <div class="descricao">Soma da semana</div>
+                <div class="descricao">Soma do período</div>
             </article>
             <article class="card">
                 <h3>Retornos</h3>
@@ -46,24 +53,65 @@
 
         <section class="tabela-container">
             <div class="section-title">
-                <h2>Resumo por entregador</h2>
-                <span data-week-range></span>
+                <h2>Total de pacotes por dia</h2>
+                <span>Saídas já fechadas</span>
             </div>
-            <div class="filters week-filters"><label>De <input type="date" data-week-start></label><label>Até <input type="date" data-week-end></label><button class="btn btn-secondary" data-export-week type="button">Exportar Excel</button></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Dia da semana</th>
+                        <th>Saídas</th>
+                        <th>Entregues</th>
+                        <th>Retornados</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody data-week-days-table></tbody>
+            </table>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Resumo por entregador</h2>
+                <span>7 dias até a data escolhida</span>
+            </div>
             <table>
                 <thead>
                     <tr>
                         <th>Entregador</th>
+                        <th>Chave Pix</th>
                         <th>Empresa</th>
                         <th>Datas das rotas</th>
-                        <th>Chave Pix</th>
-                        <th>Saidas</th>
+                        <th>Saídas</th>
                         <th>Entregues</th>
                         <th>Retornados</th>
                         <th>Total</th>
                     </tr>
                 </thead>
                 <tbody data-week-table></tbody>
+            </table>
+        </section>
+
+        <section class="tabela-container">
+            <div class="section-title">
+                <h2>Detalhe das rotas</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Entregador</th>
+                        <th>Chave Pix</th>
+                        <th>Empresa</th>
+                        <th>Saída</th>
+                        <th>Entregues</th>
+                        <th>Retornados</th>
+                        <th>Valor</th>
+                        <th>Pagamento</th>
+                    </tr>
+                </thead>
+                <tbody data-week-routes-table></tbody>
             </table>
         </section>
     </main>
