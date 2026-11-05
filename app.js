@@ -1040,6 +1040,7 @@ function renderFortnight() {
     const range = fortnightRange();
     const inPeriod = (date) => date >= range.start && date <= range.end;
     const receipts = state.recebimentos.filter((receipt) => inPeriod(receipt.data));
+    const closedRoutes = state.routes.filter((route) => route.status === "Fechado" && inPeriod(route.data));
     const paidRoutes = state.routes.filter((route) => (
         route.status === "Fechado"
         && route.pagamento === "Pago"
@@ -1054,11 +1055,15 @@ function renderFortnight() {
     const totalPaid = paidRoutes.reduce((sum, route) => sum + routeTotal(route), 0);
     const totalPending = pendingRoutes.reduce((sum, route) => sum + routeTotal(route), 0);
     const result = totalReceived - totalPaid;
+    const totalDelivered = closedRoutes.reduce((sum, route) => (
+        sum + Math.max(0, Number(route.saida || 0) - Number(route.retornados || 0))
+    ), 0);
 
     setText('[data-fortnight="received"]', money(totalReceived));
     setText('[data-fortnight="paid"]', money(totalPaid));
     setText('[data-fortnight="result"]', money(result));
     setText('[data-fortnight="pending"]', money(totalPending));
+    setText('[data-fortnight="delivered"]', totalDelivered);
     setText("[data-fortnight-period]", `${formatDate(range.start)} a ${formatDate(range.end)}`);
     setText("[data-fortnight-receipt-count]", `${receipts.length} recebimentos`);
 
