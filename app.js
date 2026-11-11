@@ -962,7 +962,7 @@ function updatePaymentSelection() {
         return sum + (route ? routeTotal(route) : 0);
     }, 0);
     setText("[data-pay-selected]", `${checked.length} selecionada(s) - ${money(total)}`);
-    const selectAll = document.querySelector("[data-pay-select-all]");
+    const selectAll = document.querySelector("[data-payment-select-all]");
     if (selectAll) {
         selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
         selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
@@ -2429,7 +2429,7 @@ function setupActions() {
     });
 
     document.addEventListener("change", (event) => {
-        if (event.target.matches("[data-pay-select-all]")) {
+        if (event.target.matches("[data-payment-select-all]")) {
             document.querySelectorAll("[data-select-route]").forEach((box) => { box.checked = event.target.checked; });
             updatePaymentSelection();
         } else if (event.target.matches("[data-select-route]")) {
