@@ -36,12 +36,25 @@
         return { user, role: profile.role };
     }
 
+    async function loadAllRows(table, columns) {
+        const pageSize = 1000;
+        const rows = [];
+        for (let from = 0; ; from += pageSize) {
+            const { data, error } = await client.from(table)
+                .select(columns)
+                .order("id", { ascending: true })
+                .range(from, from + pageSize - 1);
+            if (error) throw error;
+            rows.push(...(data || []));
+            if (!data || data.length < pageSize) return rows;
+        }
+    }
+
     async function loadState(defaults) {
         const results = await Promise.all([
             ...Object.entries(tables).map(([key, table]) =>
-                client.from(table).select("payload").then(({ data, error }) => {
-                    if (error) throw error;
-                    return [key, (data || []).map((row) => row.payload)];
+                loadAllRows(table, "payload").then((rows) => {
+                    return [key, rows.map((row) => row.payload)];
                 })),
             client.from("app_settings").select("payload").eq("id", "system").single()
                 .then(({ data, error }) => {
@@ -56,9 +69,8 @@
             );
         }
         if (defaults.role === "admin") {
-            const { data, error } = await client.from("driver_private").select("id, payload");
-            if (error) throw error;
-            const privateById = new Map((data || []).map((row) => [row.id, row.payload]));
+            const data = await loadAllRows("driver_private", "id, payload");
+            const privateById = new Map(data.map((row) => [row.id, row.payload]));
             privateDriverSnapshots.clear();
             for (const [id, payload] of privateById) {
                 privateDriverSnapshots.set(id, JSON.stringify(payload));
@@ -70,9 +82,12 @@
         }
         loaded.funcionarios = [];
         if (defaults.role === "admin") {
-            const { data, error } = await client.from("employees").select("payload");
-            if (error) console.error("Falha ao carregar funcionarios:", error);
-            else loaded.funcionarios = (data || []).map((row) => row.payload);
+            try {
+                const data = await loadAllRows("employees", "payload");
+                loaded.funcionarios = data.map((row) => row.payload);
+            } catch (error) {
+                console.error("Falha ao carregar funcionarios:", error);
+            }
         }
         recordSnapshots.funcionarios = new Map(
             loaded.funcionarios.map((record) => [record.id, JSON.stringify(record)])
