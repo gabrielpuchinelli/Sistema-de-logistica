@@ -54,6 +54,33 @@ Quando algo não puder ser confirmado pelo repositório, marque explicitamente c
 - Prefira funções pequenas, responsabilidade única e nomes claros.
 - Evite duplicação quando a extração puder ser feita sem aumentar o acoplamento.
 
+## Comentários no código
+
+Ao criar ou alterar código, adicione comentários quando eles ajudarem a explicar regras de negócio, decisões importantes ou fluxos que não sejam óbvios.
+
+Os comentários devem ser escritos em português e ser claros para um desenvolvedor em aprendizado.
+
+Priorize comentários para:
+
+- regras de negócio;
+- cálculos financeiros;
+- manipulação de estoque;
+- mudanças de status de rotas;
+- diferenças entre admin e operador;
+- chamadas importantes ao Supabase;
+- RPCs;
+- sincronização entre state e banco;
+- trechos com comportamento não intuitivo;
+- soluções temporárias ou compatibilidade com código legado.
+
+Evite comentários redundantes.
+
+Não faça:
+
+```js
+// Soma 1
+contador++;
+
 ## Supabase e banco de dados
 
 Sem solicitação explícita, **não alterar**:
