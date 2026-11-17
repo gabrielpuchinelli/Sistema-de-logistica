@@ -948,20 +948,14 @@ function exportWeek() {
 }
 function paymentFilter() {
     return {
-        from: document.querySelector("[data-pay-from]")?.value || "",
-        to: document.querySelector("[data-pay-to]")?.value || "",
-        status: document.querySelector("[data-pay-status]")?.value || ""
+        start: document.querySelector("[data-payment-start]")?.value || "",
+        end: document.querySelector("[data-payment-end]")?.value || ""
     };
 }
 
 function updatePaymentSelection() {
     const boxes = [...document.querySelectorAll("[data-select-route]")];
     const checked = boxes.filter((box) => box.checked);
-    const total = checked.reduce((sum, box) => {
-        const route = state.routes.find((item) => item.id === box.value);
-        return sum + (route ? routeTotal(route) : 0);
-    }, 0);
-    setText("[data-pay-selected]", `${checked.length} selecionada(s) - ${money(total)}`);
     const selectAll = document.querySelector("[data-payment-select-all]");
     if (selectAll) {
         selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
@@ -973,11 +967,11 @@ function renderPayments() {
     const tbody = document.querySelector("[data-payments-table]");
     if (!tbody) return;
 
-    const { from, to, status } = paymentFilter();
+    const { start, end } = paymentFilter();
     const closedRoutes = state.routes.filter((route) => (
         route.status === "Fechado"
-        && (!from || route.data >= from)
-        && (!to || route.data <= to)
+        && (!start || route.data >= start)
+        && (!end || route.data <= end)
     ));
     const pending = closedRoutes.filter((route) => route.pagamento !== "Pago");
     const paid = closedRoutes.filter((route) => route.pagamento === "Pago");
@@ -986,7 +980,6 @@ function renderPayments() {
     setText('[data-payments="paid"]', money(paid.reduce((sum, route) => sum + routeTotal(route), 0)));
 
     const rows = closedRoutes
-        .filter((route) => !status || (status === "pago") === (route.pagamento === "Pago"))
         .map((route, index) => ({ route, index }))
         .sort((a, b) => (a.route.data < b.route.data ? 1 : a.route.data > b.route.data ? -1 : 0) || b.index - a.index)
         .map(({ route }) => route);
@@ -1459,48 +1452,17 @@ function performanceLabel(routes) {
 }
 
 function renderPerformance(date) {
-    if (!document.querySelector("[data-perf]")) return;
+    if (!document.querySelector("[data-performance]")) return;
 
     const periods = {
-        day: { start: date, end: date },
-        week: { start: shiftDate(date, -6), end: date },
+        daily: { start: date, end: date },
+        weekly: { start: shiftDate(date, -6), end: date },
         fortnight: fortnightOf(date)
     };
-    const inPeriod = (route, period) => route.data >= period.start && route.data <= period.end;
 
-    for (const [key, period] of Object.entries(periods)) {
-        const summary = summarizeReport(state.routes.filter((route) => inPeriod(route, period)));
-        setText(`[data-perf="${key}"]`, percentLabel(summary.delivered, summary.delivered + summary.failed));
-        setText(`[data-perf-detail="${key}"]`, `${summary.delivered} entregues e ${summary.failed} insucessos`
-            + (key === "day" ? "" : ` (${formatDate(period.start)} a ${formatDate(period.end)})`));
-    }
-
-    const scope = state.routes.filter((route) => inPeriod(route, periods.week) || inPeriod(route, periods.fortnight));
-    const byName = (a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
-    const perfRow = (name, items) => `
-        <tr>
-            <td>${escapeHtml(name)}</td>
-            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.day)))}</td>
-            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.week)))}</td>
-            <td>${performanceLabel(items.filter((route) => inPeriod(route, periods.fortnight)))}</td>
-        </tr>`;
-
-    const companyBody = document.querySelector("[data-perf-company-table]");
-    if (companyBody) {
-        const groups = [...groupRoutes(scope, (route) => route.empresa || "Sem empresa").entries()]
-            .map(([name, items]) => ({ name, items }))
-            .sort(byName);
-        if (!groups.length) renderEmpty(companyBody, 4, "Nenhuma saída no período.");
-        else companyBody.innerHTML = groups.map((group) => perfRow(group.name, group.items)).join("");
-    }
-
-    const driverBody = document.querySelector("[data-perf-driver-table]");
-    if (driverBody) {
-        const groups = [...groupRoutes(scope, (route) => route.driverId).entries()]
-            .map(([driverId, items]) => ({ name: getDriver(driverId)?.nome || "Entregador removido", items }))
-            .sort(byName);
-        if (!groups.length) renderEmpty(driverBody, 4, "Nenhuma saída no período.");
-        else driverBody.innerHTML = groups.map((group) => perfRow(group.name, group.items)).join("");
+    for (const [key, { start, end }] of Object.entries(periods)) {
+        const routes = state.routes.filter((route) => route.data >= start && route.data <= end);
+        setText(`[data-performance="${key}"]`, performanceLabel(routes));
     }
 }
 
@@ -1937,7 +1899,8 @@ function setupForms() {
             if (state.role === "operador" && driverId) {
                 submitButton.disabled = true;
                 try {
-                    const savedDriver = await window.rmsSupabase.updateDriver(driverId, {
+                    const savedDriver = await window.rmsSupabase.updateDriver({
+                        id: driverId,
                         nome: String(data.nome || "").trim(),
                         telefone: String(data.telefone || "").trim(),
                         veiculo: data.veiculo,
@@ -2245,9 +2208,10 @@ function setupActions() {
             if (driver) {
                 const nextStatus = driver.status === "Ativo" ? "Inativo" : "Ativo";
                 if (state.role === "operador") {
-                    window.rmsSupabase.updateDriver(driver.id, {
+                    window.rmsSupabase.updateDriver({
+                        id: driver.id,
                         nome: driver.nome,
-                        telefone: driver.telefone || "",
+                        telefone: driver.telefone,
                         veiculo: driver.veiculo,
                         status: nextStatus
                     }).then((savedDriver) => {
@@ -2335,28 +2299,25 @@ function setupActions() {
 
         if (event.target.closest("[data-export-week]")) exportWeek();
 
-        if (event.target.closest("[data-pay-clear]")) {
-            document.querySelectorAll("[data-pay-from], [data-pay-to], [data-pay-status]").forEach((field) => { field.value = ""; });
-            renderPayments();
-        }
-
-        const markButton = event.target.closest("[data-pay-mark]");
+        const markButton = event.target.closest("[data-payment-bulk-apply]");
         if (markButton) {
-            const target = markButton.dataset.payMark;
+            const target = document.querySelector("[data-payment-bulk-status]")?.value;
+            if (target !== "Pago" && target !== "Pendente") return;
+            const markPaid = target === "Pago";
             const selectedIds = [...document.querySelectorAll("[data-select-route]:checked")].map((box) => box.value);
             const routes = selectedIds
                 .map((id) => state.routes.find((route) => route.id === id))
-                .filter((route) => route && (route.pagamento === "Pago") !== (target === "pago"));
+                .filter((route) => route && (route.pagamento === "Pago") !== markPaid);
             if (!selectedIds.length) {
                 toast("Selecione ao menos uma saída.");
             } else if (!routes.length) {
-                toast(target === "pago" ? "As saídas selecionadas já estão pagas." : "As saídas selecionadas já estão pendentes.");
+                toast(markPaid ? "As saídas selecionadas já estão pagas." : "As saídas selecionadas já estão pendentes.");
             } else {
                 const total = routes.reduce((sum, route) => sum + routeTotal(route), 0);
-                const message = `Marcar ${routes.length} saída(s), no total de ${money(total)}, como ${target === "pago" ? "pagas" : "pendentes"}?`;
+                const message = `Marcar ${routes.length} saída(s), no total de ${money(total)}, como ${markPaid ? "pagas" : "pendentes"}?`;
                 if (window.confirm(message)) {
                     routes.forEach((route) => {
-                        if (target === "pago") {
+                        if (markPaid) {
                             route.pagamento = "Pago";
                             route.dataPagamento = today;
                         } else {
@@ -2367,7 +2328,7 @@ function setupActions() {
                     saveData(state);
                     renderPayments();
                     renderFortnight();
-                    toast(target === "pago" ? "Pagamentos marcados como pagos." : "Pagamentos desfeitos.");
+                    toast(markPaid ? "Pagamentos marcados como pagos." : "Pagamentos desfeitos.");
                 }
             }
         }
@@ -2423,7 +2384,7 @@ function setupActions() {
         sortHistory.addEventListener("change", () => renderHistory(search ? search.value : ""));
     }
 
-    ["[data-pay-from]", "[data-pay-to]", "[data-pay-status]"].forEach((selector) => {
+    ["[data-payment-start]", "[data-payment-end]"].forEach((selector) => {
         const field = document.querySelector(selector);
         if (field) field.addEventListener("change", renderPayments);
     });
