@@ -7,6 +7,11 @@ const {
     weekdayName
 } = window.RMSUtils;
 
+const {
+    setText,
+    renderEmpty
+} = window.RMSUI;
+
 const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
@@ -148,12 +153,6 @@ function dailyStock(date, company) {
     return { received, dispatched, available: received - dispatched };
 }
 
-function setText(selector, value) {
-    document.querySelectorAll(selector).forEach((element) => {
-        element.textContent = value;
-    });
-}
-
 function toast(message, duration = 2800) {
     const oldToast = document.querySelector(".toast");
     if (oldToast) oldToast.remove();
@@ -246,10 +245,6 @@ function ensureLogged(page) {
     }
 
     return true;
-}
-
-function renderEmpty(tbody, columns, message) {
-    tbody.innerHTML = `<tr><td class="empty-row" colspan="${columns}">${message}</td></tr>`;
 }
 
 function dashboardMetrics() {
