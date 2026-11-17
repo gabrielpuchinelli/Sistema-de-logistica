@@ -1,3 +1,12 @@
+const {
+    money,
+    escapeHtml,
+    formatDate,
+    sortedByName,
+    vehicleKey,
+    weekdayName
+} = window.RMSUtils;
+
 const menuItems = [
     ["dashboard", "Dashboard", "dashboard.html"],
     ["entregadores", "Entregadores", "entregadores.html"],
@@ -53,20 +62,6 @@ function saveData(data) {
 }
 
 let state = loadData();
-
-function money(value) {
-    return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-    })[character]);
-}
 
 function validatePixKey(type, value) {
     const key = value.trim();
@@ -125,12 +120,6 @@ function validatePixKey(type, value) {
     return "Selecione um tipo de chave Pix valido.";
 }
 
-function formatDate(value) {
-    if (!value) return "-";
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-}
-
 function addCalendarDays(value, days) {
     const date = new Date(`${value}T00:00:00`);
     date.setDate(date.getDate() + days);
@@ -140,18 +129,8 @@ function addCalendarDays(value, days) {
     return `${year}-${month}-${day}`;
 }
 
-function sortedByName(list) {
-    return list.slice().sort((a, b) => String(a.nome || "")
-        .localeCompare(String(b.nome || ""), "pt-BR", { sensitivity: "base" }));
-}
-
 function getDriver(id) {
     return state.drivers.find((driver) => driver.id === id);
-}
-
-function vehicleKey(vehicle) {
-    const normalized = String(vehicle || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    return ["moto", "carro", "van"].includes(normalized) ? normalized : "moto";
 }
 
 function routeTotal(route) {
@@ -749,12 +728,6 @@ function weekRange() {
         end = shiftDate(start, 6);
     }
     return { start, end };
-}
-
-function weekdayName(isoDate) {
-    const [year, month, day] = isoDate.split("-").map(Number);
-    const name = new Date(year, month - 1, day).toLocaleDateString("pt-BR", { weekday: "long" });
-    return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function weekData() {
