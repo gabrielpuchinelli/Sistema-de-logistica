@@ -528,11 +528,10 @@ function renderHistory(filter = "") {
 
 async function removeRoute(routeId) {
     try {
-        const result = await window.rmsSupabase.deleteRoute(routeId);
+        await window.rmsSupabase.deleteRoute(routeId);
         state.routes = state.routes.filter((route) => route.id !== routeId);
-        if (result.removed_entry_id) {
-            state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.id !== result.removed_entry_id);
-        }
+        // O ON DELETE CASCADE remove os retornos no banco. Aqui sincronizamos o estado local.
+        state.entradasGalpao = state.entradasGalpao.filter((entry) => entry.routeId !== routeId);
         const editForm = document.querySelector('[data-form="route-edit"]');
         if (editForm && editForm.elements.namedItem("routeId").value === routeId) closeRouteEdit();
         renderHistory(document.querySelector("[data-search-history]")?.value || "");
