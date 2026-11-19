@@ -26,12 +26,14 @@ const menuItems = [
     ["configuracoes", "Configurações", "configuracoes.html"]
 ];
 
-const today = (() => {
+function localDate() {
     const now = new Date();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     return `${now.getFullYear()}-${month}-${day}`;
-})();
+}
+
+const today = localDate();
 
 function makeId() {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -239,7 +241,8 @@ function ensureLogged(page) {
     }
 
     const operatorPages = ["dashboard", "entregadores", "nova-saida", "fechamento"];
-    if (state.role === "operador" && !operatorPages.includes(page)) {
+    if ((state.role === "operador" && !operatorPages.includes(page))
+        || (page === "funcionarios" && state.role !== "admin")) {
         window.location.replace("dashboard.html");
         return false;
     }
@@ -1526,26 +1529,230 @@ function renderEmployees() {
     `).join("");
 }
 
+const EMPLOYEE_DOCUMENT_FIELDS = [
+    ["identidade", "docIdentidade", "arquivoIdentidade", "Informe o documento de identidade."],
+    ["comprovante-residencia", "docResidencia", "arquivoResidencia", "Informe o comprovante de residência."],
+    ["certificado-mei", "docMei", "arquivoMei"]
+];
+
+function updateEmployeeDocumentHints(form, employee) {
+    for (const [kind, field, , requiredMessage] of EMPLOYEE_DOCUMENT_FIELDS) {
+        const hasDocument = Boolean(employee?.[field]);
+        const missingStatus = requiredMessage ? "Documento pendente." : "Nenhum arquivo enviado.";
+        form.querySelector(`[data-employee-doc-status="${kind}"]`).textContent = !employee ? ""
+            : hasDocument ? "Já enviado. Escolha outro arquivo para substituir." : missingStatus;
+        form.querySelector(`[data-open-employee-doc="${kind}"]`).hidden = !hasDocument;
+    }
+}
+
+function setEmployeeAdjustmentOpen(form, open) {
+    const fields = form.querySelector("#employee-adjustment");
+    fields.hidden = !open;
+    fields.disabled = !open;
+    const button = form.querySelector("[data-employee-adjustment]");
+    button.setAttribute("aria-expanded", String(open));
+    button.textContent = open ? "Cancelar reajuste" : "Reajustar salário";
+    if (open) {
+        form.elements.namedItem("novoSalario").focus();
+    } else {
+        form.elements.namedItem("novoSalario").value = "";
+    }
+}
+
+function updateEmployeeSalaryForm(form, employee) {
+    setEmployeeAdjustmentOpen(form, false);
+    const editing = Boolean(form.elements.namedItem("employeeId").value);
+    form.elements.namedItem("remuneracao").readOnly = editing;
+    form.querySelector("[data-employee-adjustment]").hidden = !editing;
+    const summary = form.querySelector("[data-employee-last-adjustment]");
+    summary.hidden = !employee?.dataReajuste;
+    summary.textContent = employee?.dataReajuste ? `Último reajuste: ${formatDate(employee.dataReajuste)}` : "";
+    if (employee?.dataReajuste && employee.remuneracaoAnterior != null) {
+        summary.textContent += ` · Salário anterior: ${money(employee.remuneracaoAnterior)}`;
+    }
+}
+
 function resetEmployeeForm(employeeForm) {
     employeeForm.reset();
+    delete employeeForm.dataset.draftId;
     employeeForm.elements.namedItem("employeeId").value = "";
     document.querySelector("[data-employee-form-title]").textContent = "Novo funcionário";
     employeeForm.querySelector("[data-employee-submit]").textContent = "Cadastrar";
     employeeForm.querySelector("[data-employee-cancel]").hidden = true;
+    updateEmployeeSalaryForm(employeeForm, null);
+    updateEmployeeDocumentHints(employeeForm, null);
 }
 
 function startEmployeeEdit(employeeForm, employee) {
+    // Limpa arquivos selecionados em outro cadastro antes de preencher a edição.
+    employeeForm.reset();
+    delete employeeForm.dataset.draftId;
     employeeForm.elements.namedItem("employeeId").value = employee.id;
-    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "endereco", "observacao"]) {
-        employeeForm.elements.namedItem(field).value = employee[field] || "";
+    for (const field of ["nome", "cpf", "cargo", "vinculo", "admissao", "telefone", "email", "endereco",
+        "observacao", "remuneracao", "pixTipo", "pixChave"]) {
+        employeeForm.elements.namedItem(field).value = employee[field] ?? "";
     }
-    employeeForm.elements.namedItem("remuneracao").value = employee.remuneracao == null ? "" : employee.remuneracao;
     employeeForm.elements.namedItem("status").value = employee.status || "Ativo";
     document.querySelector("[data-employee-form-title]").textContent = "Editar funcionário";
     employeeForm.querySelector("[data-employee-submit]").textContent = "Salvar alterações";
     employeeForm.querySelector("[data-employee-cancel]").hidden = false;
+    updateEmployeeSalaryForm(employeeForm, employee);
+    updateEmployeeDocumentHints(employeeForm, employee);
     employeeForm.scrollIntoView({ behavior: "smooth", block: "start" });
     employeeForm.elements.namedItem("nome").focus({ preventScroll: true });
+}
+
+async function openEmployeeDocument(path) {
+    const target = window.open("", "_blank");
+    try {
+        const url = await window.rmsSupabase.getEmployeeDocumentUrl(path);
+        if (target) {
+            target.opener = null;
+            target.location.href = url;
+        } else {
+            window.location.href = url;
+        }
+    } catch {
+        if (target) target.close();
+        toast("Não foi possível abrir o documento.");
+    }
+}
+
+async function discardEmployeeDocuments(paths, message) {
+    if (!paths.length) return;
+    try {
+        await window.rmsSupabase.removeEmployeeDocuments(paths);
+    } catch {
+        toast(message, 8000);
+    }
+}
+
+async function submitEmployee(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (state.role !== "admin" || form.inert) return;
+
+    const data = Object.fromEntries(new FormData(form));
+    const { employeeId, novoSalario } = data;
+    delete data.employeeId;
+    delete data.novoSalario;
+    const files = [];
+    for (const [kind, field, input, requiredMessage] of EMPLOYEE_DOCUMENT_FIELDS) {
+        const fileInput = form.elements.namedItem(input);
+        const file = fileInput.files[0];
+        // Cadastros antigos podem receber os documentos em uma edição posterior.
+        if (!employeeId && requiredMessage && !file) {
+            toast(requiredMessage);
+            fileInput.focus();
+            return;
+        }
+        delete data[input];
+        if (file) files.push({ kind, field, file });
+    }
+    for (const key of Object.keys(data)) data[key] = data[key].trim();
+    if (validatePixKey("cpf", data.cpf)) {
+        toast("Informe um CPF válido.");
+        form.elements.namedItem("cpf").focus();
+        return;
+    }
+    const cpfDigits = data.cpf.replace(/\D/g, "");
+    if (state.funcionarios.some((employee) => employee.id !== employeeId
+        && String(employee.cpf || "").replace(/\D/g, "") === cpfDigits)) {
+        toast("Já existe um funcionário com este CPF.");
+        return;
+    }
+
+    const pixError = validatePixKey(data.pixTipo, data.pixChave);
+    if (pixError) {
+        toast(pixError);
+        form.elements.namedItem(data.pixTipo ? "pixChave" : "pixTipo").focus();
+        return;
+    }
+    data.pixTipo = data.pixChave ? data.pixTipo : "";
+
+    const index = state.funcionarios.findIndex((employee) => employee.id === employeeId);
+    const previous = state.funcionarios[index];
+    if (employeeId && !previous) {
+        toast("Funcionário não encontrado.");
+        resetEmployeeForm(form);
+        return;
+    }
+    data.remuneracao = data.remuneracao === "" ? null : Number(data.remuneracao);
+    if (previous) data.remuneracao = previous.remuneracao ?? null;
+    const adjustingSalary = Boolean(previous && novoSalario?.trim());
+    if (adjustingSalary) {
+        const salary = Number(novoSalario);
+        if (!Number.isFinite(salary) || salary < 0) {
+            toast("Informe um novo salário válido.");
+            form.elements.namedItem("novoSalario").focus();
+            return;
+        }
+        data.remuneracaoAnterior = data.remuneracao;
+        data.remuneracao = salary;
+    }
+    const id = previous?.id || (form.dataset.draftId ||= makeId());
+    // Somente os arquivos selecionados substituem caminhos existentes no cadastro.
+    const record = { ...previous, ...data, id };
+    const uploaded = [];
+    const replaced = [];
+    form.inert = true;
+    try {
+        try {
+            for (const { kind, field, file } of files) {
+                const prepared = await prepareDocument(file);
+                const path = await window.rmsSupabase.uploadEmployeeDocument(id, kind, prepared);
+                uploaded.push(path);
+                record[field] = path;
+                if (previous?.[field]) replaced.push(previous[field]);
+            }
+        } catch (error) {
+            toast(error.userMessage || "Não foi possível enviar os documentos. Tente novamente.");
+            await discardEmployeeDocuments(uploaded, "Falha ao limpar arquivos do envio interrompido.");
+            return;
+        }
+
+        if (adjustingSalary) record.dataReajuste = localDate();
+        if (!(await window.rmsSupabase.saveEmployee(record, previous, state.role))) {
+            toast("O cadastro mudou ou está indisponível. Recarregue a página e tente novamente.", 8000);
+            await discardEmployeeDocuments(uploaded, "Falha ao limpar arquivos do envio interrompido.");
+            return;
+        }
+        if (previous) state.funcionarios[index] = record;
+        else state.funcionarios.push(record);
+        resetEmployeeForm(form);
+        renderEmployees();
+        toast(previous ? "Cadastro atualizado." : "Funcionário cadastrado.");
+        // O arquivo anterior só pode sair do Storage após confirmar o novo caminho no banco.
+        await discardEmployeeDocuments(replaced, "Cadastro salvo, mas não foi possível remover o arquivo anterior.");
+    } catch {
+        // Sem confirmação da gravação, um arquivo novo pode já estar referenciado no banco.
+        toast("Não foi possível confirmar a gravação. Recarregue a página antes de tentar novamente.", 8000);
+    } finally {
+        form.inert = false;
+    }
+}
+
+async function toggleEmployeeStatus(form, index) {
+    const previous = state.funcionarios[index];
+    const status = previous.status === "Ativo" ? "Inativo" : "Ativo";
+    const record = { ...previous, status };
+    form.inert = true;
+    try {
+        if (!(await window.rmsSupabase.saveEmployee(record, previous, state.role))) {
+            toast("O cadastro mudou ou está indisponível. Recarregue a página.", 8000);
+            return;
+        }
+        state.funcionarios[index] = record;
+        if (form.elements.namedItem("employeeId").value === record.id) {
+            form.elements.namedItem("status").value = status;
+        }
+        renderEmployees();
+        toast("Status atualizado.");
+    } catch {
+        toast("Não foi possível confirmar a alteração do status. Recarregue a página.", 8000);
+    } finally {
+        form.inert = false;
+    }
 }
 
 function resetEntryForm(form) {
@@ -1732,43 +1939,10 @@ function setupForms() {
 
     const employeeForm = document.querySelector('[data-form="employee"]');
     if (employeeForm) {
-        employeeForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            const data = Object.fromEntries(new FormData(employeeForm));
-            const employeeId = data.employeeId;
-            delete data.employeeId;
-            for (const key of Object.keys(data)) {
-                if (typeof data[key] === "string") data[key] = data[key].trim();
-            }
-            if (validatePixKey("cpf", data.cpf)) {
-                toast("Informe um CPF válido.");
-                employeeForm.elements.namedItem("cpf").focus();
-                return;
-            }
-            const cpfDigits = data.cpf.replace(/\D/g, "");
-            const duplicate = state.funcionarios.find((employee) => employee.id !== employeeId
-                && String(employee.cpf || "").replace(/\D/g, "") === cpfDigits);
-            if (duplicate) {
-                toast("Já existe um funcionário com este CPF.");
-                return;
-            }
-            data.remuneracao = data.remuneracao === "" ? null : Number(data.remuneracao);
-
-            const existing = state.funcionarios.find((employee) => employee.id === employeeId);
-            if (employeeId && !existing) {
-                toast("Funcionário não encontrado.");
-                resetEmployeeForm(employeeForm);
-                return;
-            }
-            if (existing) {
-                Object.assign(existing, data);
-            } else {
-                state.funcionarios.push({ id: makeId(), ...data });
-            }
-            const saved = await saveData(state);
-            resetEmployeeForm(employeeForm);
-            renderEmployees();
-            if (saved) toast(existing ? "Cadastro atualizado." : "Funcionário cadastrado.");
+        employeeForm.addEventListener("submit", submitEmployee);
+        employeeForm.querySelector("[data-employee-adjustment]").addEventListener("click", () => {
+            if (employeeForm.inert || !employeeForm.elements.namedItem("employeeId").value) return;
+            setEmployeeAdjustmentOpen(employeeForm, employeeForm.querySelector("#employee-adjustment").hidden);
         });
     }
 
@@ -2231,22 +2405,30 @@ function setupActions() {
         if (editEmployeeButton) {
             const employee = state.funcionarios.find((item) => item.id === editEmployeeButton.dataset.editEmployee);
             const employeeForm = document.querySelector('[data-form="employee"]');
-            if (employee && employeeForm) startEmployeeEdit(employeeForm, employee);
+            if (state.role === "admin" && employee && employeeForm && !employeeForm.inert) {
+                startEmployeeEdit(employeeForm, employee);
+            }
         }
 
         if (event.target.closest("[data-employee-cancel]")) {
             const employeeForm = document.querySelector('[data-form="employee"]');
-            if (employeeForm) resetEmployeeForm(employeeForm);
+            if (employeeForm && !employeeForm.inert) resetEmployeeForm(employeeForm);
+        }
+
+        const openEmployeeDoc = event.target.closest("[data-open-employee-doc]");
+        if (openEmployeeDoc && state.role === "admin") {
+            const form = openEmployeeDoc.closest("form");
+            const employee = state.funcionarios.find((item) => item.id === form.elements.namedItem("employeeId").value);
+            const documentField = EMPLOYEE_DOCUMENT_FIELDS.find(([kind]) => kind === openEmployeeDoc.dataset.openEmployeeDoc);
+            if (documentField && employee?.[documentField[1]]) openEmployeeDocument(employee[documentField[1]]);
         }
 
         const toggleEmployeeButton = event.target.closest("[data-toggle-employee]");
-        if (toggleEmployeeButton) {
-            const employee = state.funcionarios.find((item) => item.id === toggleEmployeeButton.dataset.toggleEmployee);
-            if (employee) {
-                employee.status = employee.status === "Ativo" ? "Inativo" : "Ativo";
-                saveData(state);
-                renderEmployees();
-                toast("Status atualizado.");
+        if (toggleEmployeeButton && state.role === "admin") {
+            const form = document.querySelector('[data-form="employee"]');
+            const index = state.funcionarios.findIndex((item) => item.id === toggleEmployeeButton.dataset.toggleEmployee);
+            if (index >= 0 && form && !form.inert) {
+                toggleEmployeeStatus(form, index);
             }
         }
 

@@ -12,6 +12,7 @@
         recebimentos: "receipts"
     };
     const DOCS_BUCKET = "driver-docs";
+    const EMPLOYEE_DOCS_BUCKET = "employee-docs";
     let settingsSnapshot = null;
     const recordSnapshots = {};
     const privateDriverSnapshots = new Map();
@@ -140,9 +141,7 @@
                     .map((record) => ({ id: record.id, payload: record }))
                     .filter((row) => recordSnapshots.funcionarios.get(row.id) !== JSON.stringify(row.payload));
                 if (employeeRows.length) {
-                    const { error } = await client.from("employees").upsert(employeeRows, { onConflict: "id" });
-                    if (error) throw error;
-                    for (const row of employeeRows) recordSnapshots.funcionarios.set(row.id, JSON.stringify(row.payload));
+                    await persistEmployees(employeeRows);
                 }
             }
 
@@ -156,6 +155,44 @@
                 settingsSnapshot = nextSettings;
             }
         });
+        return writeQueue;
+    }
+
+    async function persistEmployees(rows, change) {
+        const employees = client.from("employees");
+        let query;
+        if (!change) {
+            query = employees.upsert(rows, { onConflict: "id" });
+        } else if (!change.previous) {
+            query = employees.insert(rows);
+        } else {
+            const [row] = rows;
+            query = employees.update({ payload: row.payload }).eq("id", row.id);
+            // Protege anexos e remuneração contra gravações de uma edição desatualizada.
+            for (const [field, path] of Object.entries(change.previous)) {
+                const column = `payload->>${field}`;
+                query = path == null ? query.is(column, null) : query.eq(column, path);
+            }
+        }
+        const { data, error } = await (change ? query.select("id").maybeSingle() : query);
+        if (error) throw error;
+        if (change && !data) return false;
+        for (const row of rows) recordSnapshots.funcionarios.set(row.id, JSON.stringify(row.payload));
+        return true;
+    }
+
+    function saveEmployee(record, previous, role) {
+        if (role !== "admin") return Promise.reject(new Error("Acesso administrativo necessário."));
+        const previousFields = previous && {
+            docIdentidade: previous.docIdentidade,
+            docResidencia: previous.docResidencia,
+            docMei: previous.docMei,
+            remuneracao: previous.remuneracao,
+            remuneracaoAnterior: previous.remuneracaoAnterior,
+            dataReajuste: previous.dataReajuste
+        };
+        writeQueue = writeQueue.catch(() => {}).then(() =>
+            persistEmployees([{ id: record.id, payload: record }], { previous: previousFields }));
         return writeQueue;
     }
 
@@ -274,6 +311,25 @@
         if (error) throw error;
     }
 
+    async function uploadEmployeeDocument(employeeId, kind, prepared) {
+        const path = `${employeeId}/${kind}/${crypto.randomUUID()}.${prepared.ext}`;
+        const { error } = await client.storage.from(EMPLOYEE_DOCS_BUCKET)
+            .upload(path, prepared.blob, { contentType: prepared.type, upsert: false });
+        if (error) throw error;
+        return path;
+    }
+
+    async function getEmployeeDocumentUrl(path) {
+        const { data, error } = await client.storage.from(EMPLOYEE_DOCS_BUCKET).createSignedUrl(path, 60);
+        if (error) throw error;
+        return data.signedUrl;
+    }
+
+    async function removeEmployeeDocuments(paths) {
+        const { error } = await client.storage.from(EMPLOYEE_DOCS_BUCKET).remove(paths);
+        if (error) throw error;
+    }
+
     async function registerWarehouseEntry(entry) {
         const { data, error } = await client.rpc("register_warehouse_entry", { p_entry: entry });
         if (error) throw error;
@@ -296,6 +352,7 @@
         signOut: () => client.auth.signOut(),
         loadState,
         saveState,
+        saveEmployee,
         createRoute,
         closeRoute,
         updateRoute,
@@ -308,6 +365,9 @@
         uploadDriverDocument,
         getDriverDocumentUrl,
         removeDriverDocuments,
+        uploadEmployeeDocument,
+        getEmployeeDocumentUrl,
+        removeEmployeeDocuments,
         registerWarehouseEntry,
         clearBusinessData
     };

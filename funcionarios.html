@@ -51,7 +51,6 @@
                     </select>
                 </label>
                 <label>Data de admissão<input name="admissao" type="date"></label>
-                <label>Remuneração mensal (R$)<input name="remuneracao" type="number" min="0" step="0.01" placeholder="0,00"></label>
                 <label>Telefone<input name="telefone" type="tel" placeholder="(00) 00000-0000"></label>
                 <label>E-mail<input name="email" type="email" placeholder="funcionario@email.com"></label>
                 <label>Endereço<input name="endereco" type="text" placeholder="Rua, número, bairro e cidade" maxlength="200"></label>
@@ -62,10 +61,45 @@
                     </select>
                 </label>
                 <label>Observação<input name="observacao" type="text" placeholder="Opcional" maxlength="200"></label>
+                <div>
+                    <label>Remuneração mensal (R$)<input name="remuneracao" type="number" min="0" step="0.01" placeholder="0,00"></label>
+                    <p class="form-help" data-employee-last-adjustment hidden></p>
+                </div>
+                <button class="btn btn-muted" data-employee-adjustment aria-controls="employee-adjustment" aria-expanded="false" type="button" hidden>Reajustar salário</button>
+                <fieldset id="employee-adjustment" hidden disabled>
+                    <label>Novo salário (R$)<input name="novoSalario" type="number" min="0" step="0.01" placeholder="0,00"></label>
+                </fieldset>
+                <label>Tipo de chave PIX
+                    <select name="pixTipo">
+                        <option value="">Selecione</option>
+                        <option value="cpf">CPF</option>
+                        <option value="cnpj">CNPJ</option>
+                        <option value="telefone">Telefone</option>
+                        <option value="email">E-mail</option>
+                        <option value="aleatoria">Chave aleatória</option>
+                    </select>
+                </label>
+                <label>Chave PIX<input name="pixChave" type="text"></label>
+                <div>
+                    <label>Documento de identidade * (PDF, JPG ou PNG)<input name="arquivoIdentidade" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+                    <span class="form-help" data-employee-doc-status="identidade"></span>
+                    <button class="btn btn-small btn-secondary" data-open-employee-doc="identidade" type="button" hidden>Ver identidade</button>
+                </div>
+                <div>
+                    <label>Comprovante de residência * (PDF, JPG ou PNG)<input name="arquivoResidencia" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+                    <span class="form-help" data-employee-doc-status="comprovante-residencia"></span>
+                    <button class="btn btn-small btn-secondary" data-open-employee-doc="comprovante-residencia" type="button" hidden>Ver comprovante</button>
+                </div>
+                <div>
+                    <label>Certificado MEI (opcional, PDF, JPG ou PNG)<input name="arquivoMei" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+                    <span class="form-help" data-employee-doc-status="certificado-mei"></span>
+                    <button class="btn btn-small btn-secondary" data-open-employee-doc="certificado-mei" type="button" hidden>Ver certificado</button>
+                </div>
                 <button class="btn btn-primary" data-employee-submit type="submit">Cadastrar</button>
                 <button class="btn btn-muted" data-employee-cancel hidden type="button">Cancelar edição</button>
             </form>
-            <p class="form-help">Estes dados (CPF e remuneração) ficam visíveis somente para administradores.</p>
+            <p class="form-help">* Documentos obrigatórios no cadastro de um novo funcionário.</p>
+            <p class="form-help">Os dados e documentos dos funcionários são de acesso administrativo.</p>
         </section>
 
         <section class="tabela-container">
