@@ -460,6 +460,11 @@ button:hover {
     background: #e4ebe3;
 }
 
+[data-employee-adjustment][hidden],
+[data-open-employee-doc][hidden] {
+    display: none;
+}
+
 .resumo,
 .form-panel,
 .tabela-container,
